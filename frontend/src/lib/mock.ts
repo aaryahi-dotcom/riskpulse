@@ -348,13 +348,31 @@ export const simStats = [
   { k: 'Mean score', v: '0.61', c: AMBER }, { k: 'Detection at txn', v: '#2', c: GREEN },
 ];
 
-// ---- Live feed generator (keeps the console feeling alive) ----
-const FROM_POOL = ['arya@okhdfc', 'n.desai@ybl', 'kaysha@oksbi', 'bhoomi@apl', 'p.rao@okaxis', 's.iyer@ibl', 'nihanshi@ybl', 'd.imrie@oksbi', 'aaryahi@apl', 't.menon@okicici', 'paridhi@ybl', 'v.shah@oksbi', 'r.kaur@apl'];
-const TO_POOL = ['x8k2m@ybl', 'q4t7z@paytm', 'r.mehta@ybl', 'vend.kirana@sbi', 'm9v2k@ybl', 'fuel.hp@okhdfc', 'w2p8n@paytm', 'rent.jain@ybl', 'z6h1c@ybl', 'grocer.day@ybl', 'k3n9x@paytm', 'sal.acct@okhdfc', 'y7b4d@ybl'];
+// ---- Live feed generator (keeps the console feeling alive; also the
+// pools used to build real scoring requests against the backend — see
+// state/useRiskPulse.ts) ----
+export const FROM_POOL = ['arya@okhdfc', 'n.desai@ybl', 'kaysha@oksbi', 'bhoomi@apl', 'p.rao@okaxis', 's.iyer@ibl', 'nihanshi@ybl', 'd.imrie@oksbi', 'aaryahi@apl', 't.menon@okicici', 'paridhi@ybl', 'v.shah@oksbi', 'r.kaur@apl'];
+export const TO_POOL = ['x8k2m@ybl', 'q4t7z@paytm', 'r.mehta@ybl', 'vend.kirana@sbi', 'm9v2k@ybl', 'fuel.hp@okhdfc', 'w2p8n@paytm', 'rent.jain@ybl', 'z6h1c@ybl', 'grocer.day@ybl', 'k3n9x@paytm', 'sal.acct@okhdfc', 'y7b4d@ybl'];
+const CHANNEL_POOL = ['UPI', 'UPI', 'UPI', 'IMPS', 'NEFT'];
 const RISK_FLAGS = ['cycle 2-hop · mule cluster', 'new benef burst', 'repeat round amt', 'centrality spike', 'below-threshold split', 'exposure 0.58', 'channel switch', '3am pattern'];
 
 let txnCounter = 88413;
-function pick<T>(arr: T[]): T { return arr[Math.floor(Math.random() * arr.length)]; }
+export function pick<T>(arr: T[]): T { return arr[Math.floor(Math.random() * arr.length)]; }
+
+export function nextTxnLabel(): string {
+  return 'TXN-' + txnCounter++;
+}
+
+export function genLiveAmount(): number {
+  const risky = Math.random() < 0.3;
+  return risky
+    ? Math.round((45000 + Math.random() * 260000) / 100) * 100
+    : Math.round((200 + Math.random() * 35000) / 10) * 10;
+}
+
+export function genChannel(): string {
+  return pick(CHANNEL_POOL);
+}
 
 export function genTxn(): RawTxn {
   const id = 'TXN-' + txnCounter++;

@@ -2,11 +2,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   GREEN, AMBER, RED, tint, money, line, area,
   RAW_SEED, SHAP, VOL, FLG, genTxn,
+  FROM_POOL, TO_POOL, pick, genLiveAmount, genChannel,
   NAV_DEFS, SCREEN_TITLE, SCREEN_NOTE,
   GN, GL, nodeLabelDefs, prSeries,
   scenarios as SCENARIOS, simStatusLabel,
   type RawTxn, type ScenarioKey,
 } from '../lib/mock';
+import { scoreTransaction } from '../lib/api';
 
 export type { ScenarioKey } from '../lib/mock';
 
@@ -37,14 +39,48 @@ export function useRiskPulse() {
   const [scenario, setScenario] = useState<ScenarioKey | null>(null);
   const [feed, setFeed] = useState<RawTxn[]>(RAW_SEED);
   const [selId, setSelId] = useState<string | null>(null);
+  // Real per-transaction SHAP values, keyed by txn id, populated whenever
+  // the live feed successfully scores a transaction against the real
+  // backend. Rows scored via the mock fallback simply have no entry here,
+  // so the SHAP panel falls back to the static demo array for them.
+  const [shapMap, setShapMap] = useState<Record<string, [string, number][]>>({});
 
-  // ---- live feed simulation ----
+  // ---- live feed: real backend scoring, falls back to the local
+  // simulator if the backend is unreachable (CORS, not running, etc.) so
+  // the console keeps working standalone for demos ----
   useEffect(() => {
     if (!live) return;
+    let cancelled = false;
     const id = window.setInterval(() => {
-      setFeed((prev) => [genTxn(), ...prev].slice(0, 14));
+      const from = pick(FROM_POOL);
+      const to = pick(TO_POOL);
+      const amount = genLiveAmount();
+      const channel = genChannel();
+      const nowIso = new Date().toISOString();
+
+      scoreTransaction({ amount, sender_id: from, receiver_id: to, timestamp: nowIso, channel, vpa: to })
+        .then((resp) => {
+          if (cancelled) return;
+          const time = new Date().toTimeString().slice(0, 8);
+          const topReason = resp.shap_reasons[0];
+          const flagLine = resp.coercion_override
+            ? 'puppet override · coercion'
+            : resp.risk_score > 0.55 && topReason
+              ? topReason.feature.replace(/_/g, ' ')
+              : '—';
+          const row: RawTxn = [resp.txn_id, time, from, to, amount, resp.risk_score, resp.puppet_score, flagLine];
+          setShapMap((prev) => ({
+            ...prev,
+            [resp.txn_id]: Object.entries(resp.shap_values) as [string, number][],
+          }));
+          setFeed((prev) => [row, ...prev].slice(0, 14));
+        })
+        .catch(() => {
+          if (cancelled) return;
+          setFeed((prev) => [genTxn(), ...prev].slice(0, 14));
+        });
     }, 2600);
-    return () => window.clearInterval(id);
+    return () => { cancelled = true; window.clearInterval(id); };
   }, [live]);
 
   // refs so the clamping below always reads the latest paired value
@@ -127,14 +163,17 @@ export function useRiskPulse() {
   }, [appr, blk]);
 
   const shap = useMemo(() => {
-    const shapMax = 0.24;
-    return SHAP.map(([n, v]) => ({
+    const realId = selectedRow?.raw[0];
+    const real = realId ? shapMap[realId] : undefined;
+    const source: [string, number][] = real && real.length ? real : SHAP;
+    const shapMax = Math.max(0.01, ...source.map(([, v]) => Math.abs(v)));
+    return source.map(([n, v]) => ({
       n, v: (v > 0 ? '+' : '') + v.toFixed(2),
       w: (Math.abs(v) / shapMax) * 50 + '%',
       left: v > 0 ? '50%' : (50 - (Math.abs(v) / shapMax) * 50) + '%',
       c: v > 0 ? RED : GREEN,
     }));
-  }, []);
+  }, [selectedRow, shapMap]);
 
   const kpis = useMemo(() => [
     { k: 'Scored today', v: '1,84,203', d: '+6.2%', c: 'var(--color-accent-700)', spark: line(VOL, 120, 22) },

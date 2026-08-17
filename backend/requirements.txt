@@ -1,0 +1,49 @@
+# RiskPulse backend + ml — pinned dependencies.
+# One shared virtualenv covers both backend/ (FastAPI serving) and ml/
+# (training script), since this is a single-laptop hackathon prototype
+# (see CLAUDE.md-equivalent notes in BUILD_CHECKLIST.md: don't scaffold
+# separate environments before they're needed).
+
+# --- Web framework ---
+fastapi==0.128.8
+uvicorn[standard]==0.34.0
+pydantic==2.10.6
+pydantic-settings==2.7.1
+python-multipart==0.0.20
+# Lets pydantic evaluate `X | None`-style annotations on Python 3.9 (this
+# dev machine's system Python), where PEP 604 union syntax isn't a native
+# runtime operator. Harmless no-op on 3.10+.
+eval_type_backport==0.2.2
+
+# --- Auth ---
+PyJWT==2.10.1
+passlib[bcrypt]==1.7.4
+
+# --- DB / ORM ---
+SQLAlchemy==2.0.38
+# Only imported/used when DATABASE_URL points at Postgres (docker-compose
+# path); SQLite (the local dev default) needs no extra driver.
+psycopg2-binary==2.9.10
+
+# --- Feature store stand-in (fakeredis; real redis-py client API) ---
+fakeredis==2.27.0
+redis==5.2.1
+
+# --- ML / data ---
+pandas==2.3.3
+numpy==2.0.2
+scikit-learn==1.6.1
+imbalanced-learn==0.12.4
+shap==0.49.1
+joblib==1.4.2
+# The wheel installs fine everywhere, but importing it needs libomp.dylib
+# on macOS (normally `brew install libomp`). ml/train.py tries it first at
+# runtime and falls back cleanly to sklearn.ensemble.GradientBoostingClassifier
+# if the native library can't be loaded (see try_import_xgboost()) — that
+# fallback is what actually ran on this dev machine, which has no Homebrew
+# installed at all.
+xgboost==2.1.3
+
+# --- Testing ---
+pytest==8.3.4
+httpx==0.28.1

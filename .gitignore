@@ -1,4 +1,4 @@
-# Logs
+# --- Logs ---
 logs
 *.log
 npm-debug.log*
@@ -7,12 +7,42 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
-node_modules
-dist
-dist-ssr
+# --- Frontend / Node ---
+node_modules/
+dist/
+dist-ssr/
 *.local
 
-# Editor directories and files
+# --- Python ---
+**/__pycache__/
+*.py[cod]
+**/.venv/
+.venv/
+venv/
+*.egg-info/
+
+# --- ML artifacts / trained models (never committed) ---
+backend/models/*.pkl
+backend/models/*.joblib
+backend/models/metrics.json
+backend/models/*.json
+!backend/models/.gitkeep
+
+# --- Databases ---
+*.db
+*.sqlite3
+backend/*.db
+backend/*.sqlite3
+
+# --- Raw dataset (never committed, 683MB+26MB) ---
+data/
+
+# --- Env / secrets ---
+.env
+.env.local
+*.env.local
+
+# --- Editor / OS ---
 .vscode/*
 !.vscode/extensions.json
 .idea

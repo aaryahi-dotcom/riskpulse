@@ -1,0 +1,70 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-riskpulse}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-riskpulse}
+      POSTGRES_DB: ${POSTGRES_DB:-riskpulse}
+    ports:
+      - "5432:5432"
+    volumes:
+      - riskpulse_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-riskpulse}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg2://riskpulse:riskpulse@postgres:5432/riskpulse}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      MODEL_DIR: /app/models
+      JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
+      JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
+      JWT_EXPIRY_MINUTES: ${JWT_EXPIRY_MINUTES:-60}
+      DEMO_USERNAME: ${DEMO_USERNAME:-demo_admin}
+      DEMO_PASSWORD: ${DEMO_PASSWORD:-riskpulse-demo}
+      DEFAULT_APPROVE_THRESHOLD: ${DEFAULT_APPROVE_THRESHOLD:-0.30}
+      DEFAULT_BLOCK_THRESHOLD: ${DEFAULT_BLOCK_THRESHOLD:-0.70}
+      DEFAULT_PUPPET_THRESHOLD: ${DEFAULT_PUPPET_THRESHOLD:-0.70}
+      CORS_ORIGINS: '["http://localhost:5173","http://localhost:80","http://frontend"]'
+    ports:
+      - "8000:8000"
+    # NOTE: requires `python ml/train.py` to have been run at least once so
+    # backend/models/ has real artifacts; the API still starts and falls
+    # back to a rule-based scorer otherwise (checklist 2.10 resilience).
+    volumes:
+      - ./backend/models:/app/models:ro
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8000}
+    depends_on:
+      - backend
+    ports:
+      - "5173:80"
+
+volumes:
+  riskpulse_pg_data:
