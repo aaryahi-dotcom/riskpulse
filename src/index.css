@@ -1,0 +1,6 @@
+@import './styles.css';
+@import './theme.css';
+
+* { box-sizing: border-box; }
+html, body, #root { height: 100%; }
+body { margin: 0; text-wrap: pretty; }
