@@ -100,11 +100,25 @@ the training step done at least once.
 ## What's built vs. deferred
 
 Per `BUILD_CHECKLIST.md`: **Layer 0 (foundation) + Layer 1 (must-have to
-satisfy S21) + Layer 3.1 (puppet detection) + Layer 2 (deployability)**
-are built. Layers 3.2-3.4 (UPI-specific deep features beyond the demo
-pair, graph evolution, contagion modeling) and 4 (most UI beyond wiring
-the existing mockup to real data) are explicitly not started yet — see
-the checklist for the reasoning and recommended build order.
+satisfy S21) + Layer 2 (deployability) + Layer 3 (novelty — puppet
+detection, graph evolution + pre-approval simulation, fraud contagion,
+and the demo-scoped pair of UPI-specific features)** are built. Layer
+3.2's remaining UPI features (`collect_pay_ratio`, `channel_switch_flag`,
+`interbank_ratio`, festival-season baseline shift) are the checklist's
+own "CUT FIRST" items and are still deferred, and Layer 4 (most UI
+beyond wiring the existing mockup to real data — graph viz, contagion
+heatmap, analyst workbench, rule-builder UI, model-health charts) is
+not started yet — see the checklist for the reasoning and recommended
+build order.
+
+### Layer 3 — Novelty (the 4 differentiators)
+
+| # | Item | Status |
+|---|------|--------|
+| 3.1 | Puppet signature detection | Done (pre-existing) — 4 sub-signals (`amount_regularity`, `timing_regularity`, `new_beneficiary_burst`, `session_linearity`) combined into `puppet_score`, computed on every transaction, rule-engine override at `puppet_score > 0.7 AND amount > ₹1,00,000` |
+| 3.2 | UPI-specific deep features | Demo pair done — `vpa_entropy` (Shannon entropy of the VPA local-part) and `time_deviation` (circular deviation from the sender's median transaction hour), both fed into the model at train and serve time. The rest (`collect_pay_ratio`, `channel_switch_flag`, `interbank_ratio`, festival baseline shift) is deliberately deferred per the checklist's own "CUT FIRST" call |
+| 3.3 | Temporal graph evolution + pre-approval simulation | Done — `backend/app/graph_analysis.py`: NetworkX `DiGraph` (accounts=nodes, aggregated txns=edges), rebuilt from the audit log at startup and updated incrementally; `GET /api/v1/graph/node/{user_id}` (PageRank/clustering/degree + windowed deltas) and `/subgraph/{user_id}`; `simulate_pre_approval()` runs on every `/api/v1/score` call, bounded to a small ego-neighborhood copy (cycle check, local PageRank-spike check, suspicious-cluster-bridging check) — never a full-graph recompute on the hot path |
+| 3.4 | Fraud contagion modeling | Done — `backend/app/contagion.py`: confirming `POST /api/v1/feedback` with `confirmed_label="fraud"` triggers a `BackgroundTasks` BFS (depth 3) from the receiver over the transaction graph, `exposure = 1.0 * 0.5**hop`, persisted as `user:{id}:exposure_score` in the feature store (TTL-based decay standing in for SIR's "Recovered" state) and folded into the next score for that account; `likely_next_victims()` surfaces the proactive alert list |
 
 ### Layer 2 — Innovation / Deployability
 
