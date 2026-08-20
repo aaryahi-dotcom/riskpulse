@@ -1,15 +1,84 @@
+import { useEffect, useState } from 'react';
 import { Blueprint } from '../ui/Blueprint';
-import { rules, builderRows } from '../../lib/mock';
+import { rules as mockRules, builderRows, RED, AMBER, GREEN, tint } from '../../lib/mock';
+import { listRules, getRuleStats, createRule, type RuleDTO } from '../../lib/api';
+
+type DisplayRule = typeof mockRules[number];
+
+const actionColor = (r: RuleDTO) => (r.action === 'override' ? RED : r.forced_tier === 'block' ? RED : AMBER);
+const actionLabel = (r: RuleDTO) =>
+  r.action === 'override' ? `Force ${r.forced_tier ?? 'review'}` : `${r.score_delta && r.score_delta >= 0 ? '+' : ''}${(r.score_delta ?? 0).toFixed(2)} score`;
+const conditionText = (c: Record<string, unknown>): string => {
+  if ('all' in c || 'any' in c) {
+    const key = 'all' in c ? 'all' : 'any';
+    const joiner = key === 'all' ? ' AND ' : ' OR ';
+    return (c[key] as Record<string, unknown>[]).map(conditionText).join(joiner);
+  }
+  return `${c.field} ${c.op} ${c.value}`;
+};
+
+async function loadLiveRules(): Promise<DisplayRule[]> {
+  const live = await listRules();
+  const withStats = await Promise.all(
+    live.map(async (r) => {
+      const stats = await getRuleStats(r.id).catch(() => null);
+      const fireRate = stats ? Math.round(stats.fire_rate * 100) + '%' : '—';
+      const precision = stats?.precision_estimate != null ? stats.precision_estimate.toFixed(2) : '—';
+      const c = actionColor(r);
+      return {
+        name: r.name, action: actionLabel(r), c, tint: tint(c), pr: r.priority,
+        cond: `IF ${conditionText(r.condition_json)} THEN ${actionLabel(r)}`,
+        stats: [
+          { k: 'Fired (sampled)', v: String(stats?.fired_count ?? 0), w: fireRate, c: stats && stats.fire_rate > 0.5 ? RED : AMBER },
+          { k: 'Precision', v: precision, w: Math.round((stats?.precision_estimate ?? 0) * 100) + '%', c: (stats?.precision_estimate ?? 0) > 0.7 ? GREEN : AMBER },
+          { k: 'Feedback coverage', v: String(stats?.feedback_coverage ?? 0), w: '100%', c: 'var(--color-accent)' },
+        ],
+      };
+    }),
+  );
+  return withStats;
+}
 
 export function Rules() {
+  const [liveRules, setLiveRules] = useState<DisplayRule[] | null>(null);
+  const [deploying, setDeploying] = useState(false);
+  const [deployMsg, setDeployMsg] = useState<string | null>(null);
+
+  const refresh = () => {
+    loadLiveRules().then(setLiveRules).catch(() => setLiveRules(null));
+  };
+  useEffect(refresh, []);
+
+  const displayRules = liveRules ?? mockRules;
+
+  const deployRule = async () => {
+    setDeploying(true);
+    setDeployMsg(null);
+    try {
+      await createRule({
+        name: 'Night-time large transfer to new VPA',
+        condition_json: { field: 'amount', op: '>', value: 200000 },
+        action: 'augment',
+        score_delta: 0.3,
+        priority: 50,
+      });
+      setDeployMsg('Rule deployed — live immediately.');
+      refresh();
+    } catch {
+      setDeployMsg('Backend unreachable — rule not deployed.');
+    } finally {
+      setDeploying(false);
+    }
+  };
+
   return (
     <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 360px', gap: 22, alignItems: 'start' }}>
       <Blueprint style={{ padding: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', padding: '11px 18px', borderBottom: '1px solid var(--color-divider)' }}>
           <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 600, fontSize: 12.5, letterSpacing: '.1em', textTransform: 'uppercase' }}>Active rules</span>
-          <span style={{ marginLeft: 'auto', fontSize: 11.5, color: 'color-mix(in srgb,var(--color-text) 60%,transparent)' }}>Evaluated alongside the model · no retraining</span>
+          <span style={{ marginLeft: 'auto', fontSize: 11.5, color: 'color-mix(in srgb,var(--color-text) 60%,transparent)' }}>{liveRules ? 'Live from /api/v1/rules' : 'Evaluated alongside the model · no retraining'}</span>
         </div>
-        {rules.map((r) => (
+        {displayRules.map((r) => (
           <div key={r.name} style={{ padding: '16px 18px', borderBottom: '1px solid color-mix(in srgb,var(--color-text) 8%,transparent)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
               <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 600, fontSize: 16, textTransform: 'uppercase' }}>{r.name}</span>
@@ -59,7 +128,10 @@ export function Rules() {
             <span style={{ display: 'block', fontSize: 10.5, letterSpacing: '.1em', textTransform: 'uppercase', color: 'color-mix(in srgb,var(--color-text) 58%,transparent)', marginBottom: 6 }}>Backtest · last 7 days</span>
             <span style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}><span style={{ fontFamily: 'var(--font-heading)', fontSize: 24, fontFeatureSettings: "'tnum' 1" }}>64</span><span style={{ fontSize: 12, color: 'color-mix(in srgb,var(--color-text) 65%,transparent)' }}>transactions would match · 9 known fraud · est. FPR 2.1%</span></span>
           </div>
-          <button type="button" className="btn btn-primary btn-block" style={{ padding: 11 }}>Deploy rule — takes effect immediately</button>
+          <button type="button" className="btn btn-primary btn-block" style={{ padding: 11 }} disabled={deploying} onClick={deployRule}>
+            {deploying ? 'Deploying…' : 'Deploy rule — takes effect immediately'}
+          </button>
+          {deployMsg && <span style={{ fontSize: 11.5, color: deployMsg.startsWith('Rule') ? GREEN : RED }}>{deployMsg}</span>}
         </div>
       </Blueprint>
     </div>

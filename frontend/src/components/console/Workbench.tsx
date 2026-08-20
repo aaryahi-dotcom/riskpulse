@@ -1,8 +1,30 @@
+import { useState } from 'react';
 import { Blueprint } from '../ui/Blueprint';
-import { analystStats, linked, timeline, miniNodes, miniLinks, RED } from '../../lib/mock';
+import { analystStats, linked, timeline, miniNodes, miniLinks, RED, GREEN } from '../../lib/mock';
+import { submitFeedback } from '../../lib/api';
 import type { RiskPulse } from '../../state/useRiskPulse';
 
 export function Workbench({ rp }: { rp: RiskPulse }) {
+  const [feedbackMsg, setFeedbackMsg] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  const sendFeedback = async (label: 'fraud' | 'legit') => {
+    setSubmitting(true);
+    setFeedbackMsg(null);
+    try {
+      await submitFeedback(rp.sel.id, label, label === 'legit' && rp.sel.dec !== 'Approve');
+      setFeedbackMsg(
+        label === 'fraud'
+          ? `Confirmed fraud on ${rp.sel.id} — contagion propagation queued.`
+          : `Recorded override — approve on ${rp.sel.id}.`,
+      );
+    } catch {
+      setFeedbackMsg('Backend unreachable — feedback not recorded.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '290px minmax(0,1fr)', gap: 22, alignItems: 'start' }}>
       <Blueprint style={{ padding: 0 }}>
@@ -70,15 +92,17 @@ export function Workbench({ rp }: { rp: RiskPulse }) {
             </div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', padding: '14px 18px', borderTop: '1px solid var(--color-divider)' }}>
-            <button type="button" className="btn" style={{ background: RED, color: 'var(--color-bg)', borderColor: RED, padding: '10px 18px' }}>Confirm fraud</button>
-            <button type="button" className="btn btn-secondary" style={{ padding: '10px 18px' }}>Override — approve</button>
+            <button type="button" className="btn" disabled={submitting} onClick={() => sendFeedback('fraud')} style={{ background: RED, color: 'var(--color-bg)', borderColor: RED, padding: '10px 18px' }}>Confirm fraud</button>
+            <button type="button" className="btn btn-secondary" disabled={submitting} onClick={() => sendFeedback('legit')} style={{ padding: '10px 18px' }}>Override — approve</button>
             <select className="input" style={{ width: 220 }}>
               <option>Reason — known customer</option>
               <option>Expected purchase</option>
               <option>Verified by phone</option>
               <option>Merchant whitelisted</option>
             </select>
-            <span style={{ marginLeft: 'auto', fontSize: 11.5, color: 'color-mix(in srgb,var(--color-text) 62%,transparent)' }}>Confirming fraud triggers contagion propagation (depth 3).</span>
+            <span style={{ marginLeft: 'auto', fontSize: 11.5, color: feedbackMsg ? (feedbackMsg.startsWith('Backend') ? RED : GREEN) : 'color-mix(in srgb,var(--color-text) 62%,transparent)' }}>
+              {feedbackMsg ?? 'Confirming fraud triggers contagion propagation (depth 3).'}
+            </span>
           </div>
         </Blueprint>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 22 }}>

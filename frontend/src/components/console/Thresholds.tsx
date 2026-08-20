@@ -35,8 +35,14 @@ export function Thresholds({ rp }: { rp: RiskPulse }) {
             {rp.presets.map((p) => (
               <button key={p.t} type="button" className="btn btn-secondary" onClick={() => rp.setPreset(p.a, p.b)} style={{ fontSize: 12 }}>{p.t}</button>
             ))}
-            <button type="button" className="btn btn-primary" style={{ marginLeft: 'auto' }}>Publish thresholds</button>
+            <button type="button" className="btn btn-primary" style={{ marginLeft: 'auto' }} disabled={rp.publishing} onClick={rp.publishThresholds}>
+              {rp.publishing ? 'Publishing…' : 'Publish thresholds'}
+            </button>
+            {rp.publishMsg && <span style={{ width: '100%', fontSize: 11, color: rp.publishMsg.startsWith('Published') ? GREEN : RED }}>{rp.publishMsg}</span>}
           </div>
+          {rp.replaySampleSize > 0 && (
+            <p style={{ margin: '8px 0 0', fontSize: 11, color: 'color-mix(in srgb,var(--color-text) 55%,transparent)' }}>Replay preview live from /admin/threshold-preview · {rp.replaySampleSize} sampled transactions.</p>
+          )}
         </div>
       </Blueprint>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 22 }}>

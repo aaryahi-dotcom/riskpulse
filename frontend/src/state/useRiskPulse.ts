@@ -8,7 +8,7 @@ import {
   scenarios as SCENARIOS, simStatusLabel,
   type RawTxn, type ScenarioKey,
 } from '../lib/mock';
-import { scoreTransaction } from '../lib/api';
+import { scoreTransaction, getThresholds, updateThresholds, getThresholdPreview, type ThresholdPreviewDTO } from '../lib/api';
 
 export type { ScenarioKey } from '../lib/mock';
 
@@ -44,6 +44,42 @@ export function useRiskPulse() {
   // backend. Rows scored via the mock fallback simply have no entry here,
   // so the SHAP panel falls back to the static demo array for them.
   const [shapMap, setShapMap] = useState<Record<string, [string, number][]>>({});
+  const [liveReplay, setLiveReplay] = useState<ThresholdPreviewDTO | null>(null);
+  const [publishMsg, setPublishMsg] = useState<string | null>(null);
+  const [publishing, setPublishing] = useState(false);
+  const puppetThresholdRef = useRef(0.7);
+
+  // ---- seed thresholds from the server once on mount, so a fresh
+  // session shows whatever an admin last persisted via POST
+  // /admin/thresholds instead of always restarting at the hardcoded
+  // 0.30/0.70 default ----
+  useEffect(() => {
+    getThresholds()
+      .then((t) => {
+        setApprRaw(t.approve_threshold);
+        setBlkRaw(t.block_threshold);
+        puppetThresholdRef.current = t.puppet_threshold;
+      })
+      .catch(() => {});
+  }, []);
+
+  // ---- live threshold-replay preview: debounced so dragging a slider
+  // doesn't fire a request per pixel ----
+  useEffect(() => {
+    const id = window.setTimeout(() => {
+      getThresholdPreview(appr, blk).then(setLiveReplay).catch(() => setLiveReplay(null));
+    }, 400);
+    return () => window.clearTimeout(id);
+  }, [appr, blk]);
+
+  const publishThresholds = useCallback(() => {
+    setPublishing(true);
+    setPublishMsg(null);
+    updateThresholds(appr, blk, puppetThresholdRef.current)
+      .then(() => setPublishMsg('Published — persisted server-side.'))
+      .catch(() => setPublishMsg('Backend unreachable — not published.'))
+      .finally(() => setPublishing(false));
+  }, [appr, blk]);
 
   // ---- live feed: real backend scoring, falls back to the local
   // simulator if the backend is unreachable (CORS, not running, etc.) so
@@ -295,12 +331,25 @@ export function useRiskPulse() {
       return seg;
     });
   }, []);
-  const fprLabel = (1.2 + (0.7 - blk) * 4).toFixed(1) + '%';
-  const previewRows = useMemo(() => [
-    { k: 'Auto-approved', v: (86 + appr * 24).toFixed(1) + '%', c: GREEN },
-    { k: 'Step-up auth', v: Math.max(1, (blk - appr) * 22).toFixed(1) + '%', c: AMBER },
-    { k: 'Blocked', v: ((1 - blk) * 4.2).toFixed(1) + '%', c: RED },
-  ], [appr, blk]);
+  const fprLabel = liveReplay?.estimated_fpr != null
+    ? (liveReplay.estimated_fpr * 100).toFixed(1) + '%'
+    : (1.2 + (0.7 - blk) * 4).toFixed(1) + '%';
+  const previewRows = useMemo(() => {
+    if (liveReplay && liveReplay.sample_size > 0) {
+      const { approve, step_up, block } = liveReplay.distribution;
+      const total = approve + step_up + block || 1;
+      return [
+        { k: 'Auto-approved', v: ((approve / total) * 100).toFixed(1) + '%', c: GREEN },
+        { k: 'Step-up auth', v: ((step_up / total) * 100).toFixed(1) + '%', c: AMBER },
+        { k: 'Blocked', v: ((block / total) * 100).toFixed(1) + '%', c: RED },
+      ];
+    }
+    return [
+      { k: 'Auto-approved', v: (86 + appr * 24).toFixed(1) + '%', c: GREEN },
+      { k: 'Step-up auth', v: Math.max(1, (blk - appr) * 22).toFixed(1) + '%', c: AMBER },
+      { k: 'Blocked', v: ((1 - blk) * 4.2).toFixed(1) + '%', c: RED },
+    ];
+  }, [appr, blk, liveReplay]);
   const roc: [number, number][] = [[10, 120], [40, 72], [70, 50], [110, 36], [150, 26], [190, 19], [230, 13], [250, 10]];
   const rocPath = useMemo(() => roc.map((p, i) => `${i ? 'L' : 'M'}${p[0]} ${p[1]}`).join(' '), []);
   const rocIdx = Math.min(roc.length - 1, Math.max(0, Math.round((0.95 - blk) / 0.55 * 6)));
@@ -338,6 +387,7 @@ export function useRiskPulse() {
     // thresholds
     bandApprove, bandStep, bandBlock, apprLabel, blkLabel, donut, fprLabel, previewRows,
     rocPath, rocX, rocY, catchDelta, fprDelta, presets,
+    publishThresholds, publishing, publishMsg, replaySampleSize: liveReplay?.sample_size ?? 0,
     // simulator
     simDotColor, simStatus, scenarios: SCENARIOS,
   };

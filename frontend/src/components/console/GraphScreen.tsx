@@ -1,8 +1,35 @@
+import { useEffect, useState } from 'react';
 import { Blueprint } from '../ui/Blueprint';
-import { exposed, nodeMetrics, RED } from '../../lib/mock';
+import { exposed, nodeMetrics as mockNodeMetrics, RED } from '../../lib/mock';
+import { getGraphNode, type GraphNodeDTO } from '../../lib/api';
 import type { RiskPulse, GraphMode } from '../../state/useRiskPulse';
 
+function toDisplayMetrics(m: GraphNodeDTO) {
+  return [
+    { k: 'PageRank', v: m.pagerank.toFixed(4), c: m.pagerank > 0.03 ? RED : 'inherit' },
+    { k: 'Δ 24 h', v: (m.pagerank_delta_24h >= 0 ? '+' : '') + m.pagerank_delta_24h.toFixed(4), c: m.pagerank_delta_24h > 0 ? RED : 'inherit' },
+    { k: 'Clustering', v: m.clustering_coefficient.toFixed(2), c: 'inherit' },
+    { k: 'Δ clustering 7d', v: (m.clustering_delta_7d >= 0 ? '+' : '') + m.clustering_delta_7d.toFixed(2), c: 'inherit' },
+    { k: 'Degree', v: String(m.degree), c: 'inherit' },
+    { k: 'Δ degree 1h', v: (m.degree_delta_1h >= 0 ? '+' : '') + m.degree_delta_1h.toFixed(1), c: 'inherit' },
+  ];
+}
+
 export function GraphScreen({ rp }: { rp: RiskPulse }) {
+  const [query, setQuery] = useState('');
+  const [node, setNode] = useState<GraphNodeDTO | null>(null);
+  const [lookedUp, setLookedUp] = useState<string | null>(null);
+
+  const lookup = (id: string) => {
+    if (!id) return;
+    getGraphNode(id).then((n) => { setNode(n); setLookedUp(id); }).catch(() => { setNode(null); setLookedUp(id); });
+  };
+
+  useEffect(() => { lookup(rp.sel.to); }, [rp.sel.to]);
+
+  const displayMetrics = node?.present ? toDisplayMetrics(node) : mockNodeMetrics;
+  const displayId = node?.present ? (lookedUp ?? rp.sel.to) : (lookedUp ?? 'x8k2m@ybl');
+
   return (
     <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 300px', gap: 22, alignItems: 'start' }}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 22 }}>
@@ -64,8 +91,13 @@ export function GraphScreen({ rp }: { rp: RiskPulse }) {
       <div style={{ display: 'flex', flexDirection: 'column', gap: 22 }}>
         <Blueprint style={{ padding: 16 }}>
           <span style={{ display: 'block', fontSize: 10.5, letterSpacing: '.1em', textTransform: 'uppercase', color: 'color-mix(in srgb,var(--color-text) 58%,transparent)' }}>Node inspector</span>
-          <span style={{ display: 'block', fontFamily: 'ui-monospace,Menlo,monospace', fontSize: 13, margin: '8px 0 12px', color: RED }}>x8k2m@ybl</span>
-          {nodeMetrics.map((m) => (
+          <span style={{ display: 'block', fontFamily: 'ui-monospace,Menlo,monospace', fontSize: 13, margin: '8px 0 4px', color: RED }}>{displayId}</span>
+          {node && !node.present && <span style={{ display: 'block', fontSize: 10.5, marginBottom: 8, color: 'color-mix(in srgb,var(--color-text) 55%,transparent)' }}>not yet in the transaction graph — showing demo data</span>}
+          <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
+            <input className="input" placeholder="account / VPA" value={query} onChange={(e) => setQuery(e.target.value)} style={{ fontSize: 11.5, flex: 1 }} />
+            <button type="button" className="btn btn-secondary" style={{ fontSize: 11.5, padding: '6px 10px' }} onClick={() => lookup(query)}>Look up</button>
+          </div>
+          {displayMetrics.map((m) => (
             <div key={m.k} style={{ display: 'flex', alignItems: 'baseline', gap: 8, padding: '6px 0', borderBottom: '1px solid color-mix(in srgb,var(--color-text) 8%,transparent)', fontSize: 12 }}>
               <span style={{ color: 'color-mix(in srgb,var(--color-text) 65%,transparent)' }}>{m.k}</span>
               <span style={{ flex: 1, borderBottom: '1px dotted color-mix(in srgb,var(--color-text) 25%,transparent)' }} />

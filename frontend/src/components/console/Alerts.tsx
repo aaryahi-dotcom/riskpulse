@@ -1,7 +1,58 @@
+import { useEffect, useState } from 'react';
 import { Blueprint } from '../ui/Blueprint';
-import { alertKpis, alertGroups, scatter, AMBER, GREEN } from '../../lib/mock';
+import { alertKpis as mockKpis, alertGroups as mockGroups, scatter, AMBER, GREEN, RED, money, tint } from '../../lib/mock';
+import { getAlertsGrouped, type AlertCaseDTO } from '../../lib/api';
+
+type DisplayGroup = typeof mockGroups[number];
+
+const groupTitle = (c: AlertCaseDTO) =>
+  c.group_type === 'proactive_exposure' ? `Likely next victim · ${c.group_key}`
+    : c.group_type === 'sender_pattern' ? `Sender fan-out · ${c.group_key}`
+    : `Case · ${c.group_key}`;
+const groupRule = (c: AlertCaseDTO) =>
+  c.group_type === 'proactive_exposure' ? 'Contagion exposure ≥ threshold'
+    : c.group_type === 'sender_pattern' ? 'Same sender · ≥2 beneficiaries · 24h'
+    : 'Same beneficiary · 24h window';
+const priorityTier = (c: AlertCaseDTO): ['P1' | 'P2' | 'P3', string] =>
+  c.avg_risk_score >= 0.7 || c.priority > 500000 ? ['P1', RED] : c.avg_risk_score >= 0.4 ? ['P2', AMBER] : ['P3', 'var(--color-accent)'];
+
+function toDisplayGroup(c: AlertCaseDTO): DisplayGroup {
+  const [pr, color] = priorityTier(c);
+  return {
+    t: groupTitle(c), pr, c: color, tint: tint(color), rule: groupRule(c),
+    cells: [
+      { k: 'Transactions', v: String(c.txn_count) },
+      { k: 'Value at risk', v: money(c.total_amount_at_risk) },
+      { k: 'Avg risk score', v: c.avg_risk_score.toFixed(2) },
+      { k: 'Priority', v: c.priority.toFixed(0) },
+    ],
+    bars: Array.from({ length: 12 }, (_, i) => ({ h: Math.max(10, Math.min(100, (c.avg_risk_score * 100) - 20 + i * 3)) + '%' })),
+  };
+}
 
 export function Alerts() {
+  const [live, setLive] = useState<{ kpis: typeof mockKpis; groups: DisplayGroup[] } | null>(null);
+
+  useEffect(() => {
+    getAlertsGrouped()
+      .then((data) => {
+        const valueAtRisk = data.cases.reduce((s, c) => s + c.total_amount_at_risk, 0);
+        setLive({
+          kpis: [
+            { k: 'Raw alerts · 24h', v: String(data.total_alerts), d: 'before grouping', c: 'var(--color-accent-700)' },
+            { k: 'Grouped cases', v: String(data.total_cases), d: 'live from /alerts/grouped', c: AMBER },
+            { k: 'Value at risk', v: money(valueAtRisk), d: 'across open cases', c: RED },
+            { k: 'Highest priority', v: data.cases[0]?.group_key ?? '—', d: data.cases[0] ? priorityTier(data.cases[0])[0] : '—', c: GREEN },
+          ],
+          groups: data.cases.slice(0, 8).map(toDisplayGroup),
+        });
+      })
+      .catch(() => setLive(null));
+  }, []);
+
+  const alertKpis = live?.kpis ?? mockKpis;
+  const alertGroups = live && live.groups.length ? live.groups : mockGroups;
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 22 }}>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', border: '1px solid var(--color-divider)' }}>

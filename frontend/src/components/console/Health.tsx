@@ -1,8 +1,60 @@
+import { useEffect, useState } from 'react';
 import { Blueprint } from '../ui/Blueprint';
-import { healthKpis, healthLegend, healthSeries, deployMarks, importance, latency, versions, feedbackStats, AMBER, RED } from '../../lib/mock';
+import { healthKpis as mockKpis, healthLegend, healthSeries, deployMarks, importance, latency as mockLatency, versions as mockVersions, feedbackStats, AMBER, RED, GREEN, tint } from '../../lib/mock';
+import { getModelHealth, retrainModel, type ModelHealthDTO } from '../../lib/api';
 import type { RiskPulse } from '../../state/useRiskPulse';
 
+function toLatencyRows(l: ModelHealthDTO['latency_ms']) {
+  const budget = 100;
+  const rows: { k: string; v: string; w: string; c: string; budget: string }[] = [
+    { k: 'p50', v: l.p50_ms }, { k: 'p95', v: l.p95_ms }, { k: 'p99', v: l.p99_ms },
+  ].map(({ k, v }) => {
+    const ms = v ?? 0;
+    const pct = Math.min(100, (ms / (budget * 1.4)) * 100);
+    return { k, v: v != null ? `${v.toFixed(0)} ms` : '—', w: pct + '%', c: ms > budget ? RED : ms > budget * 0.7 ? AMBER : GREEN, budget: (budget / (budget * 1.4) * 100) + '%' };
+  });
+  return rows;
+}
+
 export function Health({ rp }: { rp: RiskPulse }) {
+  const [health, setHealth] = useState<ModelHealthDTO | null>(null);
+  const [retraining, setRetraining] = useState(false);
+  const [retrainMsg, setRetrainMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    getModelHealth().then(setHealth).catch(() => setHealth(null));
+  }, []);
+
+  const healthKpis = health
+    ? [
+        { k: 'F1', v: health.metrics_history[0]?.f1.toFixed(2) ?? '—', d: health.metrics_history[0]?.model_version ?? '', c: GREEN },
+        { k: 'Model version', v: health.current_model_version, d: health.model_loaded ? 'loaded' : 'not loaded', c: health.model_loaded ? GREEN : RED },
+        { k: 'Drift', v: (health.drift.status as string) ?? '—', d: `${health.drift.sample_size ?? 0} sampled`, c: health.drift.status === 'drift_detected' ? RED : GREEN },
+        { k: 'Scored total', v: String(health.request_volume), d: `${health.alert_count} alerts`, c: 'var(--color-accent-700)' },
+      ]
+    : mockKpis;
+  const latency = health ? toLatencyRows(health.latency_ms) : mockLatency;
+  const versions = health && health.metrics_history.length
+    ? health.metrics_history.slice(0, 6).map((m, i) => ({
+        n: m.model_version, d: new Date(m.trained_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
+        f1: m.f1.toFixed(2), s: i === 0 ? 'live' : m.promoted ? 'promoted' : 'archived',
+        c: i === 0 ? GREEN : 'inherit', tint: i === 0 ? tint(GREEN) : 'color-mix(in srgb,currentColor 8%,transparent)',
+      }))
+    : mockVersions;
+
+  const doRetrain = async () => {
+    setRetraining(true);
+    setRetrainMsg(null);
+    try {
+      await retrainModel();
+      setRetrainMsg('Retrain queued in the background — check back for a new model version.');
+    } catch {
+      setRetrainMsg('Backend unreachable — retrain not triggered.');
+    } finally {
+      setRetraining(false);
+    }
+  };
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 22 }}>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(158px,1fr))', border: '1px solid var(--color-divider)' }}>
@@ -81,7 +133,10 @@ export function Health({ rp }: { rp: RiskPulse }) {
             ))}
           </div>
           <p style={{ margin: '14px 0 0', fontSize: 11.5, lineHeight: 1.5, color: 'color-mix(in srgb,var(--color-text) 65%,transparent)' }}>1,412 labelled points since xgb_v4. Retrain triggers at 1,500 or on demand.</p>
-          <button type="button" className="btn btn-primary btn-block" style={{ marginTop: 'auto' }}>Retrain now</button>
+          <button type="button" className="btn btn-primary btn-block" style={{ marginTop: 'auto' }} disabled={retraining} onClick={doRetrain}>
+            {retraining ? 'Queuing…' : 'Retrain now'}
+          </button>
+          {retrainMsg && <span style={{ fontSize: 11, marginTop: 6, color: retrainMsg.startsWith('Retrain queued') ? GREEN : RED }}>{retrainMsg}</span>}
         </Blueprint>
       </div>
     </div>
