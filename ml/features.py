@@ -49,7 +49,13 @@ from collections import defaultdict, deque
 import numpy as np
 import pandas as pd
 
-from feature_registry import get_feature_names, FAMILIES  # noqa: F401 (re-export)
+from feature_registry import (  # noqa: F401 (re-export)
+    FAMILIES,
+    circular_hour_deviation,
+    get_feature_names,
+    shannon_entropy_bits,
+    vpa_local_part,
+)
 from puppet_signals import combine_puppet_score
 
 logger = logging.getLogger(__name__)
@@ -96,6 +102,31 @@ def _encode_bucket(value, mapping: dict) -> int:
     if value is None or (isinstance(value, float) and math.isnan(value)) or value == "nan":
         return mapping.get("__missing__", -1)
     return mapping.get(value, mapping.get("__other__", -1))
+
+
+def _median_from_hour_counts(hour_counts: list) -> float:
+    """Median of a sender's historical hour-of-day distribution, held as a
+    24-length count array rather than a growing per-sender list of raw
+    hours — O(24) per lookup regardless of how many prior transactions the
+    sender has, which matters for the checklist 3.2 time_deviation feature
+    computed on every one of ~590K training rows. Standard median
+    definition (average of the two middle order statistics for an even
+    total count); caller guarantees sum(hour_counts) >= 2 before calling
+    (see out_time_deviation's cold-start gate below)."""
+    total = sum(hour_counts)
+    target_low = (total - 1) // 2
+    target_high = total // 2
+    cum = 0
+    val_low = val_high = None
+    for hour, c in enumerate(hour_counts):
+        cum += c
+        if val_low is None and cum > target_low:
+            val_low = hour
+        if val_high is None and cum > target_high:
+            val_high = hour
+        if val_low is not None and val_high is not None:
+            break
+    return (val_low + val_high) / 2.0
 
 
 def fit_categorical_encoders(df: pd.DataFrame) -> dict:
@@ -171,6 +202,19 @@ def build_features(df: pd.DataFrame, encoders: dict) -> pd.DataFrame:
         dtype=np.int8,
     )
 
+    # -- checklist 3.2: vpa_entropy. IEEE-CIS has no literal VPA handle
+    # string (see this module's docstring on the sender_id/receiver_id
+    # proxies); receiver_id is the closest analogue already established
+    # elsewhere in this file (e.g. receiver_domain_freq below), so it's
+    # reused here as the string whose local-part entropy we measure. Real
+    # UPI data would feed the actual "handle@bank" string instead — the
+    # formula (shannon_entropy_bits) is identical either way, which is
+    # what matters for train/serve parity with features_online.py.
+    vpa_entropy = np.array(
+        [shannon_entropy_bits(vpa_local_part(str(r))) for r in receiver_ids],
+        dtype=np.float32,
+    )
+
     # ---- global receiver domain frequency, computed expanding (no leakage) ----
     receiver_seen_count: dict = defaultdict(int)
     receiver_domain_freq = np.zeros(n, dtype=np.float32)
@@ -190,6 +234,7 @@ def build_features(df: pd.DataFrame, encoders: dict) -> pd.DataFrame:
     sender_new_benef_events = defaultdict(list)  # dts at which a new beneficiary was first paid
     sender_last_addr2 = {}
     sender_novel_fast_flags = defaultdict(lambda: deque(maxlen=5))
+    sender_hour_counts = defaultdict(lambda: [0] * 24)  # checklist 3.2: time_deviation
     beneficiary_first_seen: dict = {}
     pair_first_seen: dict = {}
     pair_count: dict = defaultdict(int)
@@ -214,6 +259,7 @@ def build_features(df: pd.DataFrame, encoders: dict) -> pd.DataFrame:
     out_timing_regularity = np.full(n, 0.5, dtype=np.float32)
     out_new_benef_burst = np.zeros(n, dtype=np.float32)
     out_session_linearity = np.zeros(n, dtype=np.float32)
+    out_time_deviation = np.zeros(n, dtype=np.float32)  # checklist 3.2
 
     for i in range(n):
         s = sender_ids[i]
@@ -293,6 +339,14 @@ def build_features(df: pd.DataFrame, encoders: dict) -> pd.DataFrame:
         out_velocity_24h[i] = len(times) - idx_24h
         out_velocity_7d[i] = len(times) - idx_7d
 
+        # -- checklist 3.2: time_deviation (prior-only, no leakage) --
+        hour_counts = sender_hour_counts[s]
+        if sum(hour_counts) >= 2:
+            median_hour = _median_from_hour_counts(hour_counts)
+            out_time_deviation[i] = circular_hour_deviation(float(hour_of_day[i]), median_hour)
+        # else: stays at the registry's 0.0 cold-start default
+        hour_counts[int(hour_of_day[i])] += 1
+
         # -- puppet sub-signals --
         recent_amts = sender_recent_amounts[s]
         if len(recent_amts) >= 2:
@@ -366,6 +420,7 @@ def build_features(df: pd.DataFrame, encoders: dict) -> pd.DataFrame:
         "d4_days": d4_f,
         "d10_days": d10_f,
         "identity_match_flag": identity_match_flag,
+        "time_deviation": out_time_deviation,
 
         "has_identity_info": has_identity_info,
         "device_type_code": device_type_code,
@@ -382,6 +437,7 @@ def build_features(df: pd.DataFrame, encoders: dict) -> pd.DataFrame:
         "purchaser_receiver_distance": dist1_f,
         "beneficiary_region_change_flag": out_beneficiary_region_change,
         "receiver_age_days": out_receiver_age_days,
+        "vpa_entropy": vpa_entropy,
 
         "amount_zscore": out_amount_zscore,
         "amount_vs_avg_ratio": out_amount_vs_avg_ratio,

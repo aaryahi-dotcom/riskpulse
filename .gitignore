@@ -27,6 +27,10 @@ backend/models/*.joblib
 backend/models/metrics.json
 backend/models/*.json
 !backend/models/.gitkeep
+# checklist 2.6: archived previous model generations (rollback source),
+# written by POST /api/v1/admin/retrain before it overwrites the live
+# artifacts — never committed, same as the live artifacts above.
+backend/models/archive/
 
 # --- Databases ---
 *.db

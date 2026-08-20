@@ -14,6 +14,9 @@ Key shape (matches the brief):
   user:{id}:recent_amounts       — last 5 amounts (puppet: amount_regularity)
   user:{id}:recent_times         — last 6 timestamps (puppet: timing_regularity)
   user:{id}:recent_novel_fast    — last 5 booleans (puppet: session_linearity)
+  user:{id}:exposure_score       — checklist 3.4 contagion exposure, TTL'd
+                                    (see contagion.py / get_exposure_score /
+                                    set_exposure_score below)
 
 The backend reads REDIS_URL from env; only when it's unset do we fall back
 to the in-process store, so the docker-compose path (real Redis) works
@@ -68,6 +71,15 @@ class FeatureStore:
                 logger.info("FeatureStore connected to real Redis at %s", redis_url)
             except Exception as e:  # noqa: BLE001
                 logger.warning("REDIS_URL set but connection failed (%s); falling back to fakeredis.", e)
+                # checklist 2.10 bugfix: without resetting self._client here,
+                # it stays bound to the broken real-redis client object (not
+                # None), so the fakeredis fallback below never runs even
+                # though _backend_name never got updated to "redis" either —
+                # every subsequent get_history()/save_history() call would
+                # then raise on the dead connection instead of degrading
+                # gracefully, exactly the failure mode this fallback exists
+                # to prevent.
+                self._client = None
 
         if self._client is None:
             try:
@@ -185,6 +197,64 @@ class FeatureStore:
         c24h = sum(1 for t in times if t >= now_ts - ONE_DAY)
         c7d = sum(1 for t in times if t >= now_ts - SEVEN_DAYS)
         return c1h, c24h, c7d
+
+    # ------------------------------------------------------------------
+    # checklist 3.4 — fraud contagion exposure score.
+    # A plain key (not the JSON history blob above) so it can carry its
+    # own short TTL independent of the rest of a sender's history —
+    # contagion risk should decay/expire on its own schedule (a few days,
+    # see contagion.EXPOSURE_TTL_SECONDS), not persist as long as the
+    # 7-day rolling history does.
+    # ------------------------------------------------------------------
+    def _exposure_key(self, user_id: str) -> str:
+        return f"user:{user_id}:exposure_score"
+
+    def get_exposure_score(self, user_id: str) -> float:
+        """0.0 (this project's "susceptible" baseline, see contagion.py's
+        SIR framing) if the account has never been touched by contagion
+        propagation, or its TTL has expired — never raises."""
+        if self._client is not None:
+            raw = self._client.get(self._exposure_key(user_id))
+            return float(raw) if raw is not None else 0.0
+        return float(self._local._data.get(self._exposure_key(user_id), 0.0))
+
+    def set_exposure_score(self, user_id: str, score: float, ttl_seconds: int = 3 * ONE_DAY) -> None:
+        if self._client is not None:
+            self._client.set(self._exposure_key(user_id), str(score), ex=ttl_seconds)
+        else:
+            # The bare in-process fallback has no TTL mechanism at all
+            # (same limitation already accepted for the history blob
+            # above) — only reachable if fakeredis itself can't be
+            # imported, which doesn't happen in this repo's environment.
+            self._local._data[self._exposure_key(user_id)] = score
+
+    def list_exposed_accounts(self, threshold: float = 0.0) -> list[tuple[str, float]]:
+        """Every account currently holding an exposure_score >= threshold
+        — feeds the checklist 3.4 "proactive likely-next-victim alert"
+        (see routers/alerts.py). Uses the redis-compatible KEYS scan
+        (fine at this project's demo scale; a real deployment would use
+        SCAN with a cursor instead of KEYS to avoid blocking a large
+        production Redis)."""
+        results: list[tuple[str, float]] = []
+        pattern = "user:*:exposure_score"
+        if self._client is not None:
+            try:
+                for key in self._client.keys(pattern):
+                    raw = self._client.get(key)
+                    if raw is None:
+                        continue
+                    score = float(raw)
+                    if score >= threshold:
+                        results.append((key.split(":")[1], score))
+            except Exception:  # noqa: BLE001
+                logger.warning("list_exposed_accounts: key scan failed; returning partial results.")
+        else:
+            for key, val in self._local._data.items():
+                if isinstance(key, str) and key.startswith("user:") and key.endswith(":exposure_score"):
+                    score = float(val)
+                    if score >= threshold:
+                        results.append((key.split(":")[1], score))
+        return results
 
 
 _singleton: FeatureStore | None = None

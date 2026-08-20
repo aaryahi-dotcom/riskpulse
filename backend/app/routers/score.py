@@ -10,15 +10,13 @@ from sqlalchemy.orm import Session
 
 from ..db import get_db
 from ..decision import (
-    apply_puppet_override,
+    aggregate_decision,
     build_action_payload,
-    decide_tier,
-    reason_code_for,
     rule_based_fallback_score,
     shap_to_reasons,
 )
 from ..idempotency import request_hash
-from ..models_db import ScoredTransaction, ThresholdConfig
+from ..models_db import Rule, ScoredTransaction, ThresholdConfig
 from ..schemas import ScoreRequest, ScoreResponse, ScoredTransactionOut
 from ..security import get_current_subject
 
@@ -56,6 +54,7 @@ def score_transaction(
     model_service = app_state.model_service
     store = app_state.feature_store
     assembler = app_state.feature_assembler
+    graph_service = getattr(app_state, "graph_service", None)
 
     # --- idempotency: identical payload -> return the stored result ---
     h = request_hash(payload)
@@ -80,42 +79,85 @@ def score_transaction(
     reasons = []
     if model_service.loaded and X is not None:
         try:
-            risk_score, components = model_service.score(X)
+            ml_score, components = model_service.score(X)
             shap_values = model_service.explain(X)
             reasons = shap_to_reasons(shap_values)
         except Exception:  # noqa: BLE001
             logger.exception("Model scoring failed, falling back to rule-based scorer")
             velocity_24h = debug["raw_values"].get("velocity_count_24h", 0.0) if X is not None else 0.0
             first_time = bool(debug["raw_values"].get("first_time_beneficiary_flag", 1.0)) if X is not None else True
-            risk_score = rule_based_fallback_score(payload.amount, puppet_score, velocity_24h, first_time)
+            ml_score = rule_based_fallback_score(payload.amount, puppet_score, velocity_24h, first_time)
     else:
         # checklist 2.10: model missing -> rule-based scorer, not a crash
         velocity_24h = debug["raw_values"].get("velocity_count_24h", 0.0) if X is not None else 0.0
         first_time = bool(debug["raw_values"].get("first_time_beneficiary_flag", 1.0)) if X is not None else True
-        risk_score = rule_based_fallback_score(payload.amount, puppet_score, velocity_24h, first_time)
+        ml_score = rule_based_fallback_score(payload.amount, puppet_score, velocity_24h, first_time)
 
-    tier = decide_tier(risk_score, thresholds.approve_threshold, thresholds.block_threshold)
-    tier, coercion_override, coercion_reason = apply_puppet_override(
-        tier, puppet_score, payload.amount, thresholds.puppet_threshold,
+    # --- checklist 3.3: graph pre-approval simulation (cold-start/failure safe —
+    # never blocks scoring even if the graph singleton isn't built yet) ---
+    try:
+        graph_flags = (
+            graph_service.simulate_pre_approval(payload.sender_id, payload.receiver_id, payload.amount)
+            if graph_service is not None else []
+        )
+    except Exception:  # noqa: BLE001
+        logger.exception("Graph pre-approval simulation failed; degrading to no flags.")
+        graph_flags = []
+
+    # --- checklist 3.4: contagion exposure lookup (same cold-start/failure-safe pattern) ---
+    try:
+        exposure_score = store.get_exposure_score(payload.sender_id)
+    except Exception:  # noqa: BLE001
+        logger.exception("Exposure score lookup failed; degrading to 0.0.")
+        exposure_score = 0.0
+
+    # --- checklist 2.4/2.5: aggregate ml_score + rule engine + graph + contagion + puppet override ---
+    active_rules = db.query(Rule).filter(Rule.active == True).order_by(Rule.priority).all()  # noqa: E712
+    rule_context: dict = dict(debug.get("raw_values", {}))
+    rule_context.update({
+        "amount": payload.amount,
+        "channel": payload.channel,
+        "sender_id": payload.sender_id,
+        "receiver_id": payload.receiver_id,
+        "vpa": payload.vpa,
+        "device_type": payload.device_type,
+        "puppet_score": puppet_score,
+        "exposure_score": exposure_score,
+        "graph_cycle_detected": "CYCLE_DETECTED" in graph_flags,
+    })
+    agg = aggregate_decision(
+        ml_score=ml_score,
+        rules=active_rules,
+        rule_context=rule_context,
+        graph_flags=graph_flags,
+        puppet_score=puppet_score,
+        amount=payload.amount,
+        approve_threshold=thresholds.approve_threshold,
+        block_threshold=thresholds.block_threshold,
+        puppet_threshold=thresholds.puppet_threshold,
+        exposure_score=exposure_score,
     )
-    reason_code = reason_code_for(tier, coercion_override)
+    tier = agg.tier
+    reason_code = agg.reason_code
     action = build_action_payload(tier, reasons)
 
     txn_id = "TXN-" + h[:12].upper()
     response = ScoreResponse(
         txn_id=txn_id,
-        risk_score=round(risk_score, 4),
+        risk_score=round(agg.augmented_score, 4),
         decision=tier,
         shap_values={k: round(v, 4) for k, v in shap_values.items()},
         shap_reasons=reasons,
         puppet_score=round(puppet_score, 4),
-        graph_flags=[],  # graph analysis is Layer 3.3, out of scope this pass
+        graph_flags=graph_flags,
         model_version=model_service.model_version,
         reason_code=reason_code,
-        coercion_override=coercion_override,
-        coercion_reason=coercion_reason,
+        coercion_override=agg.coercion_override,
+        coercion_reason=agg.coercion_reason,
         action=action,
         idempotent_replay=False,
+        ml_score=round(agg.ml_score, 4),
+        rule_hits=agg.rule_hits,
     )
 
     # --- persist (immutable audit row) ---
@@ -135,6 +177,7 @@ def score_transaction(
         model_version=model_service.model_version,
         shap_summary_json=json.dumps(response.shap_values),
         full_response_json=response.model_dump_json(),
+        rule_hits_json=json.dumps(agg.rule_hits),
     )
     db.add(row)
     db.commit()
@@ -146,6 +189,17 @@ def score_transaction(
     store.record_transaction(
         payload.sender_id, payload.receiver_id, payload.amount, ts.timestamp(), payload.device_info,
     )
+
+    # --- checklist 3.3: update the live transaction graph so future
+    # requests' pre-approval simulation sees this edge (same
+    # after-persist update-in-place pattern as feature_store, above) ---
+    try:
+        if graph_service is not None:
+            graph_service.add_transaction(
+                payload.sender_id, payload.receiver_id, payload.amount, ts.timestamp(), blocked=(tier == "block"),
+            )
+    except Exception:  # noqa: BLE001
+        logger.exception("Graph incremental update failed; live graph may be stale for this transaction.")
 
     return response
 

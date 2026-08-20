@@ -70,6 +70,21 @@ class ScoreResponse(BaseModel):
     action: dict[str, Any]
     idempotent_replay: bool = False
 
+    # --- checklist 2.4: every contributing signal echoed for transparency ---
+    ml_score: float = Field(
+        default=0.0,
+        description="The raw ensemble ML score (supervised + anomaly, calibrated) "
+        "BEFORE rule-engine augmentation. `risk_score` is this value after "
+        "augment-rule deltas are added, which is what actually drives the "
+        "approve/step_up/block threshold — see decision.aggregate_decision().",
+    )
+    rule_hits: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description="Every active rule-engine rule (checklist 2.5) that matched "
+        "this transaction, in priority order — {rule_id, name, action, priority, "
+        "score_delta, forced_tier} each.",
+    )
+
 
 class ThresholdUpdateRequest(BaseModel):
     approve_threshold: float = Field(..., ge=0, le=1)
@@ -104,3 +119,110 @@ class ScoredTransactionOut(BaseModel):
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+# ---------------------------------------------------------------------
+# checklist 2.5 — custom rule engine CRUD
+# ---------------------------------------------------------------------
+class RuleCreate(BaseModel):
+    name: str
+    description: str = ""
+    condition_json: dict[str, Any] = Field(
+        ..., description="IF/AND/THEN tree — see backend/app/rule_engine.py."
+    )
+    action: Literal["augment", "override"]
+    score_delta: float | None = Field(
+        default=None, description="Required for action='augment'; added to the ML score before thresholding."
+    )
+    forced_tier: Literal["step_up", "block"] | None = Field(
+        default=None, description="Required for action='override'; forces this tier regardless of the ML score."
+    )
+    priority: int = Field(default=100, description="Lower runs first; first matching 'override' rule wins.")
+    active: bool = True
+
+
+class RuleUpdate(BaseModel):
+    name: str | None = None
+    description: str | None = None
+    condition_json: dict[str, Any] | None = None
+    action: Literal["augment", "override"] | None = None
+    score_delta: float | None = None
+    forced_tier: Literal["step_up", "block"] | None = None
+    priority: int | None = None
+    active: bool | None = None
+
+
+class RuleOut(BaseModel):
+    id: str
+    name: str
+    description: str
+    condition_json: dict[str, Any]
+    action: str
+    score_delta: float | None
+    forced_tier: str | None
+    priority: int
+    active: bool
+    created_by: str
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class RuleStatsOut(BaseModel):
+    rule_id: str
+    rule_name: str
+    total_scored_sampled: int
+    fired_count: int
+    fire_rate: float
+    feedback_coverage: int
+    confirmed_fraud: int
+    confirmed_legit: int
+    precision_estimate: float | None
+
+
+# ---------------------------------------------------------------------
+# checklist 2.6 — feedback loop + retraining
+# ---------------------------------------------------------------------
+class FeedbackCreate(BaseModel):
+    txn_id: str
+    confirmed_label: Literal["fraud", "legit"]
+    analyst_note: str | None = None
+    overridden_decision: bool = False
+
+
+class FeedbackOut(BaseModel):
+    id: str
+    txn_id: str
+    confirmed_label: str
+    analyst_note: str | None
+    overridden_decision: bool
+    created_by: str
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class RetrainRequest(BaseModel):
+    data_dir: str | None = Field(
+        default=None,
+        description="Override the IEEE-CIS data directory (defaults to ml/train.py's own "
+        "default, data/raw/). Tests point this at a tiny synthetic dataset instead of the "
+        "real 590K-row CSVs.",
+    )
+    models_dir: str | None = Field(
+        default=None,
+        description="Override the artifact output directory (defaults to the live MODEL_DIR). "
+        "Tests point this at a scratch directory so retraining never touches the real trained "
+        "artifacts or hot-swaps the live in-process model.",
+    )
+    synchronous: bool = Field(
+        default=False,
+        description="Run inline and return the result immediately instead of via "
+        "BackgroundTasks. Fine for a tiny/test dataset; the real 590K-row dataset should use "
+        "the default background mode so it doesn't block the event loop for other requests.",
+    )
+
+
+class RollbackRequest(BaseModel):
+    models_dir: str | None = None

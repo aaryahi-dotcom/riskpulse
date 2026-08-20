@@ -19,6 +19,8 @@ beneficiary history, spending patterns.
 """
 from __future__ import annotations
 
+import math
+from collections import Counter
 from dataclasses import dataclass, field
 from typing import Literal
 
@@ -42,6 +44,46 @@ class FeatureSpec:
     # Cold-start default used when the value cannot be computed live
     # (first-seen sender/receiver, missing optional payload field, etc.)
     cold_start_default: float = 0.0
+
+
+# ---------------------------------------------------------------------
+# checklist 3.2 — UPI-specific deep feature helpers, shared verbatim by
+# ml/features.py (training, vectorized) and backend/app/features_online.py
+# (serving, single-transaction), so this dependency-free module is the
+# single formula source-of-truth for both — same reasoning as
+# ml/puppet_signals.py's combine_puppet_score() for checklist 3.1.
+# ---------------------------------------------------------------------
+def vpa_local_part(handle: str | None) -> str:
+    """The part of a VPA/handle string before '@' (e.g. "x8k2m" from
+    "x8k2m@ybl"). If there's no '@' at all, the whole string is treated as
+    the local part rather than raising — handles missing/malformed input
+    the same cold-start-safe way as the rest of this codebase. None/empty
+    input -> empty string (entropy of "" is defined as 0.0 below)."""
+    if not handle:
+        return ""
+    return handle.split("@", 1)[0] if "@" in handle else handle
+
+
+def shannon_entropy_bits(s: str) -> float:
+    """Standard Shannon entropy, in bits, of the character distribution in
+    `s`: -sum(p * log2(p)) over character frequencies. A random-looking
+    handle like "x8k2m" has high entropy (close to log2(len(s)) when every
+    character is distinct); a human-readable one like "rahul.sharma" has
+    lower entropy (repeated letters, common bigrams). Empty string -> 0.0
+    (no information content), not a crash."""
+    if not s:
+        return 0.0
+    n = len(s)
+    counts = Counter(s)
+    return -sum((c / n) * math.log2(c / n) for c in counts.values())
+
+
+def circular_hour_deviation(hour_a: float, hour_b: float) -> float:
+    """Shortest circular distance, in hours, between two hour-of-day
+    values on a 24-hour clock (e.g. 23:00 vs 01:00 is a 2-hour deviation,
+    not 22)."""
+    d = abs(hour_a - hour_b) % 24.0
+    return min(d, 24.0 - d)
 
 
 FEATURE_REGISTRY: list[FeatureSpec] = [
@@ -84,6 +126,11 @@ FEATURE_REGISTRY: list[FeatureSpec] = [
                 "IEEE-CIS D10 — days-since signal correlated with prior activity on the card.", 0.0),
     FeatureSpec("identity_match_flag", "historical_behavior", "bool",
                 "1 if identity-verification match fields (M-series / id_38) agree, else 0.", 0.0),
+    FeatureSpec("time_deviation", "historical_behavior", "float32",
+                "checklist 3.2 (UPI deep feature): shorter circular distance, in hours, between "
+                "this transaction's hour_of_day and the sender's historical median transaction "
+                "hour (e.g. 3am to a payee for someone who never transacts at night is a signal). "
+                "0.0 cold-start default when the sender has fewer than 2 prior transactions.", 0.0),
 
     # ---------------------------------------------------------------
     # 3. Device signals (from the identity table / optional payload fields)
@@ -120,6 +167,11 @@ FEATURE_REGISTRY: list[FeatureSpec] = [
                 "1 if the receiver's region/addr differs from the sender's historical norm.", 0.0),
     FeatureSpec("receiver_age_days", "beneficiary_history", "float32",
                 "Days since this receiver was first seen anywhere in the dataset/feature store.", 0.0),
+    FeatureSpec("vpa_entropy", "beneficiary_history", "float32",
+                "checklist 3.2 (UPI deep feature): Shannon entropy (bits) of the receiver VPA "
+                "handle's local-part string before '@' (e.g. \"x8k2m@ybl\" = high entropy = "
+                "random-looking = suspicious; \"rahul.sharma@okaxis\" = low entropy = human-"
+                "readable). 0.0 for an empty/missing handle.", 0.0),
 
     # ---------------------------------------------------------------
     # 5. Spending patterns

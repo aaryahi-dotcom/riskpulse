@@ -64,6 +64,16 @@ comment this since IEEE-CIS isn't a literal UPI feed):
   new_beneficiary_burst,
   session_linearity,
   puppet_score               backend/app/puppet.py (feature_store-backed)
+  vpa_entropy                checklist 3.2: shannon_entropy_bits() of the
+                               local-part (before '@') of request.vpa
+                               (falling back to receiver_id) — always
+                               computable, no history needed
+  time_deviation              checklist 3.2: circular_hour_deviation()
+                               between this transaction's hour and the
+                               median hour of the sender's feature_store
+                               tx_times history; 0.0 cold-start default
+                               when the sender has fewer than 2 prior
+                               transactions in that history
 
 Every one of these degrades to a documented cold-start default rather than
 raising, so a never-before-seen sender/receiver never crashes the endpoint
@@ -72,12 +82,19 @@ raising, so a never-before-seen sender/receiver never crashes the endpoint
 from __future__ import annotations
 
 import math
-from datetime import timezone
+import statistics
+from datetime import datetime, timezone
 
 import pandas as pd
 
 from . import ml_path  # noqa: F401
-from feature_registry import get_feature_names, cold_start_defaults  # noqa: E402
+from feature_registry import (  # noqa: E402
+    circular_hour_deviation,
+    cold_start_defaults,
+    get_feature_names,
+    shannon_entropy_bits,
+    vpa_local_part,
+)
 
 from .feature_store import FeatureStore
 from .puppet import compute_puppet_signals
@@ -159,6 +176,13 @@ class OnlineFeatureAssembler:
             values["days_since_last_txn"] = (now_ts - max(tx_times)) / 86400.0
         # sender_prior_fraud_rate stays at cold-start default (see docstring)
 
+        # --- checklist 3.2: time_deviation ---
+        if len(tx_times) >= 2:
+            hist_hours = [datetime.fromtimestamp(t, tz=timezone.utc).hour for t in tx_times]
+            median_hour = statistics.median(hist_hours)
+            values["time_deviation"] = circular_hour_deviation(float(ts.hour), float(median_hour))
+        # else: stays at the registry's 0.0 cold-start default (<2 prior transactions)
+
         last_device = history.get("last_device")
         values["new_device_flag"] = 0.0 if (last_device and last_device == request.device_info) else 1.0
         device_events = history.get("device_events_7d", [])
@@ -185,6 +209,10 @@ class OnlineFeatureAssembler:
         freq_table = self._receiver_freq["table"]
         values["receiver_domain_freq"] = float(freq_table.get(domain, self._receiver_freq["default"]))
         values["receiver_is_free_email"] = 1.0 if any(d in domain for d in FREE_EMAIL_DOMAINS) else 0.0
+
+        # --- checklist 3.2: vpa_entropy ---
+        handle = request.vpa or request.receiver_id
+        values["vpa_entropy"] = shannon_entropy_bits(vpa_local_part(handle))
 
         beneficiaries = history.get("beneficiaries", {})
         is_new_benef = request.receiver_id not in beneficiaries

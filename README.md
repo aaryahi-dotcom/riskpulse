@@ -100,13 +100,45 @@ the training step done at least once.
 ## What's built vs. deferred
 
 Per `BUILD_CHECKLIST.md`: **Layer 0 (foundation) + Layer 1 (must-have to
-satisfy S21) + Layer 3.1 (puppet detection)** are built in full. Layers 2
-(deployability extras like Redis-backed p95 latency proof, rule engine
-CRUD, feedback/retraining loop), 3.2-3.4 (UPI-specific deep features
-beyond the demo pair, graph evolution, contagion modeling), and 4 (most
-UI beyond wiring the existing mockup to real data) are explicitly not
-started yet — see the checklist for the reasoning and recommended build
-order.
+satisfy S21) + Layer 3.1 (puppet detection) + Layer 2 (deployability)**
+are built. Layers 3.2-3.4 (UPI-specific deep features beyond the demo
+pair, graph evolution, contagion modeling) and 4 (most UI beyond wiring
+the existing mockup to real data) are explicitly not started yet — see
+the checklist for the reasoning and recommended build order.
+
+### Layer 2 — Innovation / Deployability
+
+| # | Item | Status |
+|---|------|--------|
+| 2.1 | ML ensemble (supervised + IsolationForest + calibration) | Done (pre-existing) |
+| 2.2 | Feature engine — 30+ signals, registry, unit tests | Done — added `backend/tests/test_feature_transforms.py` covering velocity counts, amount z-score, device-change velocity, new_beneficiary_burst, round_amount_flag, is_night, first_time_beneficiary_flag, cold-start defaults, and the puppet sub-signal formulas |
+| 2.3 | Redis feature store + sub-100ms path | Done — `backend/app/latency.py` + a FastAPI middleware log every request's latency and expose p50/p95/p99 via `/api/v1/admin/model-health`; the feature store is warmed from `ScoredTransaction` on startup (capped at the last 5,000 rows so a large audit log can't turn a restart into a long pause) |
+| 2.4 | Decision engine aggregator | Done — `decision.aggregate_decision()` formalizes the merge of ml_score + rule engine + graph_flags (placeholder) + puppet override, with a documented precedence order; `ScoreResponse` now also echoes `ml_score` and `rule_hits` |
+| 2.5 | Custom rule engine — CRUD `/api/v1/rules` | Done — `backend/app/rule_engine.py` (dependency-free IF/AND/THEN evaluator), full CRUD + `/api/v1/rules/{id}/stats`, and the puppet override generalized into one seeded rule row (see `routers/rules.py::seed_default_rules` for why the *live* puppet enforcement still also runs through the original, independently-tunable `decision.apply_puppet_override` path) |
+| 2.6 | Feedback loop + retraining | Done — `POST /api/v1/feedback`, `POST /api/v1/admin/retrain` (champion/challenger promotion by F1, versioned archive + `POST /api/v1/admin/rollback`), `ml/train.py` refactored into importable `train_and_evaluate()`/`persist_artifacts()` functions reused by both the CLI and the retrain endpoint |
+| 2.7 | Alert grouping — `GET /api/v1/alerts/grouped` | Done — groups by beneficiary and by cross-beneficiary sender pattern, `priority = total_amount_at_risk * avg_risk_score` |
+| 2.8 | Model health — `GET /api/v1/admin/model-health` | Done, with a **deliberately scoped-down** drift heuristic (see below) |
+| 2.9 | Threshold replay — `GET /api/v1/admin/threshold-preview` | Done — replays the last N persisted risk scores against proposed thresholds; estimated FPR is cold-start-safe (null until feedback exists) |
+| 2.10 | Resilience / fallbacks | Done — added explicit test coverage for both the model-missing and feature-store-fallback paths, and **fixed a real bug found while writing that coverage**: `FeatureStore` never reset `self._client` to `None` after a failed real-Redis connection, so it silently kept a dead connection instead of falling back to fakeredis. `docker-compose.yml` was read and sanity-checked (env vars line up with `config.Settings`, no real cloud dependency) — no changes were needed. |
+
+**Explicitly scoped down, not just deferred:**
+- **Drift detection (2.8)** is the checklist's own "CUT FIRST" item. The
+  implementation here is a documented heuristic — split the most recent
+  scored transactions into a "recent" and "older" half and flag a >25%
+  relative shift in mean amount or mean risk score — not a real
+  statistical test (no PSI/KS-test/feature-importance-shift-over-time).
+- **The generalized puppet rule (2.5)** is a seeded, CRUD-visible `rules`
+  table row, but the *authoritative* enforcement still runs through the
+  original `decision.apply_puppet_override()` against the independently
+  tunable `ThresholdConfig.puppet_threshold` — unifying those into one
+  threshold source would be a bigger refactor than this pass's mandate
+  to generalize without regressing the existing, tested puppet behavior.
+- **Retrain-with-feedback-labels (2.6)**: the retrain endpoint reuses
+  `ml/train.py`'s pipeline as-is against the IEEE-CIS CSVs; it does not
+  yet fold `Feedback` rows back in as additional training labels — the
+  feedback table and endpoint exist and are used by 2.5's rule stats and
+  2.9's estimated FPR, but closing the loop into the training set itself
+  is a further step not attempted this pass.
 
 ### Known limitation: XGBoost falls back to GradientBoostingClassifier
 

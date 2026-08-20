@@ -29,6 +29,11 @@ psycopg2-binary==2.9.10
 fakeredis==2.27.0
 redis==5.2.1
 
+# --- Graph analysis (checklist 3.3: transaction graph + pre-approval sim) ---
+# 3.2.1 is the newest release that still supports this dev machine's system
+# Python (3.9) — networkx 3.3+ requires Python >=3.10, per PyPI metadata.
+networkx==3.2.1
+
 # --- ML / data ---
 pandas==2.3.3
 numpy==2.0.2

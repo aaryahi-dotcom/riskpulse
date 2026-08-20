@@ -37,6 +37,19 @@ Pipeline
    backend/models/metrics.json.
 10. Every artifact the API needs at serving time is joblib-dumped into
     backend/models/ (gitignored — trained weights never get committed).
+
+Reused by checklist 2.6 (POST /api/v1/admin/retrain): steps 1-9 live in
+`train_and_evaluate()`, which returns a `TrainResult` bundling every
+in-memory artifact + metrics WITHOUT writing anything to disk; step 10
+lives in `persist_artifacts()`. `main()` (the `python ml/train.py` CLI
+entry point) just calls both in sequence, unconditionally, exactly
+matching this script's original behavior. The retrain endpoint calls
+`train_and_evaluate()` itself and only calls `persist_artifacts()` (and
+hot-swaps the live ModelService) if the new model's F1 is not worse than
+the currently-promoted one — that promotion decision is checklist 2.6's
+"champion/challenger" gate, and it lives in
+backend/app/routers/admin.py, not here, so this module stays a pure
+training pipeline with no knowledge of what's currently deployed.
 """
 from __future__ import annotations
 
@@ -45,6 +58,7 @@ import logging
 import os
 import sys
 import time
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
 import joblib
@@ -132,18 +146,46 @@ def build_receiver_domain_freq_table(df: pd.DataFrame, top_n: int = 500) -> dict
     return {"table": table, "default": default}
 
 
-def main() -> None:
-    t0 = time.time()
-    os.makedirs(MODELS_DIR, exist_ok=True)
+@dataclass
+class TrainResult:
+    """Everything train_and_evaluate() produces in memory, before any of
+    it is written to disk. `persist_artifacts()` is what actually dumps
+    this into a models_dir (checklist 2.6's promotion gate decides
+    whether that call happens at all)."""
 
-    logger.info("=== RiskPulse ML training pipeline ===")
-    logger.info("Data dir: %s", DATA_DIR)
-    logger.info("Models output dir: %s", MODELS_DIR)
+    model_type: str
+    version: str
+    trained_at: str
+    feature_names: list[str]
+    supervised_model: object
+    isolation_forest: object
+    calibrator: object
+    shap_explainer: object
+    encoders: dict
+    receiver_freq_table: dict
+    anomaly_norm: dict
+    combination_weights: dict = field(default_factory=lambda: {"w_supervised": W_SUPERVISED, "w_anomaly": W_ANOMALY})
+    metrics: dict = field(default_factory=dict)
+    n_rows: int = 0
+    n_train_rows: int = 0
+    n_test_rows: int = 0
+    fraud_rate: float = 0.0
+
+
+def train_and_evaluate(data_dir: str) -> TrainResult:
+    """Steps 1-9 of the pipeline: load, engineer features, split, SMOTE,
+    train the supervised + anomaly models, calibrate, SHAP sanity-check,
+    and compute honest held-out metrics. Nothing is written to disk here
+    — see persist_artifacts() for that, and main()/the retrain endpoint
+    for when it's actually called."""
+    t0 = time.time()
+    logger.info("=== RiskPulse ML training pipeline (train_and_evaluate) ===")
+    logger.info("Data dir: %s", data_dir)
 
     # ---------------------------------------------------------------
     # 1. Load
     # ---------------------------------------------------------------
-    df = load_raw(DATA_DIR)
+    df = load_raw(data_dir)
     n_rows = len(df)
     fraud_rate = df["isFraud"].mean()
     logger.info("Loaded %d transactions. Fraud rate: %.4f (%d fraud)", n_rows, fraud_rate, int(df["isFraud"].sum()))
@@ -301,41 +343,26 @@ def main() -> None:
     print(f"Confusion matrix: TN={tn} FP={fp} FN={fn} TP={tp}\n")
 
     # ---------------------------------------------------------------
-    # 10. Persist everything the backend needs
+    # Bundle everything into a TrainResult (no disk writes yet — see
+    # persist_artifacts() below)
     # ---------------------------------------------------------------
     trained_at = datetime.now(timezone.utc).isoformat()
     version = "v_" + datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
 
-    joblib.dump(clf, os.path.join(MODELS_DIR, "supervised_model.pkl"))
-    joblib.dump(iso, os.path.join(MODELS_DIR, "isolation_forest.pkl"))
-    joblib.dump(calibrator, os.path.join(MODELS_DIR, "calibrator.pkl"))
-    joblib.dump(explainer, os.path.join(MODELS_DIR, "shap_explainer.pkl"))
-    joblib.dump(encoders, os.path.join(MODELS_DIR, "categorical_encoders.pkl"))
-
-    with open(os.path.join(MODELS_DIR, "feature_columns.json"), "w") as f:
-        json.dump(feature_names, f, indent=2)
-    with open(os.path.join(MODELS_DIR, "cold_start_defaults.json"), "w") as f:
-        json.dump(cold_start_defaults(), f, indent=2)
-    with open(os.path.join(MODELS_DIR, "receiver_domain_freq.json"), "w") as f:
-        json.dump(receiver_freq_table, f)
-    with open(os.path.join(MODELS_DIR, "anomaly_norm.json"), "w") as f:
-        json.dump({"lo": lo, "hi": hi}, f)
-    with open(os.path.join(MODELS_DIR, "combination_weights.json"), "w") as f:
-        json.dump({"w_supervised": W_SUPERVISED, "w_anomaly": W_ANOMALY}, f)
-    with open(os.path.join(MODELS_DIR, "version.json"), "w") as f:
-        json.dump({
-            "model_version": version,
-            "trained_at": trained_at,
-            "model_type": model_type,
-            "n_features": len(feature_names),
-            "n_train_rows": int(len(X_core_res)),
-            "n_test_rows": int(len(X_test)),
-            "dataset_rows_total": int(n_rows),
-            "fraud_rate": float(fraud_rate),
-            "decision_threshold_used_for_metrics": DECISION_THRESHOLD_FOR_METRICS,
-        }, f, indent=2)
-    with open(os.path.join(MODELS_DIR, "metrics.json"), "w") as f:
-        json.dump({
+    result = TrainResult(
+        model_type=model_type,
+        version=version,
+        trained_at=trained_at,
+        feature_names=feature_names,
+        supervised_model=clf,
+        isolation_forest=iso,
+        calibrator=calibrator,
+        shap_explainer=explainer,
+        encoders=encoders,
+        receiver_freq_table=receiver_freq_table,
+        anomaly_norm={"lo": lo, "hi": hi},
+        combination_weights={"w_supervised": W_SUPERVISED, "w_anomaly": W_ANOMALY},
+        metrics={
             "model_version": version,
             "trained_at": trained_at,
             "model_type": model_type,
@@ -347,11 +374,66 @@ def main() -> None:
             "decision_threshold": DECISION_THRESHOLD_FOR_METRICS,
             "n_test_rows": int(len(X_test)),
             "test_fraud_count": int(y_test.sum()),
-        }, f, indent=2)
+        },
+        n_rows=int(n_rows),
+        n_train_rows=int(len(X_core_res)),
+        n_test_rows=int(len(X_test)),
+        fraud_rate=float(fraud_rate),
+    )
 
     elapsed = time.time() - t0
-    logger.info("All artifacts written to %s", MODELS_DIR)
-    logger.info("Training pipeline complete in %.1f minutes.", elapsed / 60)
+    logger.info("train_and_evaluate() complete in %.1f minutes (nothing persisted to disk yet).", elapsed / 60)
+    return result
+
+
+def persist_artifacts(result: TrainResult, models_dir: str) -> None:
+    """Step 10: joblib-dump every artifact the backend needs at serving
+    time into `models_dir` (gitignored — trained weights never get
+    committed). Unconditional — the caller (main(), or the retrain
+    endpoint's promotion gate) decides *whether* this should run at all;
+    this function just does the writing."""
+    os.makedirs(models_dir, exist_ok=True)
+
+    joblib.dump(result.supervised_model, os.path.join(models_dir, "supervised_model.pkl"))
+    joblib.dump(result.isolation_forest, os.path.join(models_dir, "isolation_forest.pkl"))
+    joblib.dump(result.calibrator, os.path.join(models_dir, "calibrator.pkl"))
+    joblib.dump(result.shap_explainer, os.path.join(models_dir, "shap_explainer.pkl"))
+    joblib.dump(result.encoders, os.path.join(models_dir, "categorical_encoders.pkl"))
+
+    with open(os.path.join(models_dir, "feature_columns.json"), "w") as f:
+        json.dump(result.feature_names, f, indent=2)
+    with open(os.path.join(models_dir, "cold_start_defaults.json"), "w") as f:
+        json.dump(cold_start_defaults(), f, indent=2)
+    with open(os.path.join(models_dir, "receiver_domain_freq.json"), "w") as f:
+        json.dump(result.receiver_freq_table, f)
+    with open(os.path.join(models_dir, "anomaly_norm.json"), "w") as f:
+        json.dump(result.anomaly_norm, f)
+    with open(os.path.join(models_dir, "combination_weights.json"), "w") as f:
+        json.dump(result.combination_weights, f)
+    with open(os.path.join(models_dir, "version.json"), "w") as f:
+        json.dump({
+            "model_version": result.version,
+            "trained_at": result.trained_at,
+            "model_type": result.model_type,
+            "n_features": len(result.feature_names),
+            "n_train_rows": result.n_train_rows,
+            "n_test_rows": result.n_test_rows,
+            "dataset_rows_total": result.n_rows,
+            "fraud_rate": result.fraud_rate,
+            "decision_threshold_used_for_metrics": DECISION_THRESHOLD_FOR_METRICS,
+        }, f, indent=2)
+    with open(os.path.join(models_dir, "metrics.json"), "w") as f:
+        json.dump(result.metrics, f, indent=2)
+
+    logger.info("All artifacts written to %s (model_version=%s)", models_dir, result.version)
+
+
+def main() -> None:
+    t0 = time.time()
+    result = train_and_evaluate(DATA_DIR)
+    persist_artifacts(result, MODELS_DIR)
+    elapsed = time.time() - t0
+    logger.info("Training pipeline (train + persist) complete in %.1f minutes.", elapsed / 60)
 
 
 if __name__ == "__main__":
