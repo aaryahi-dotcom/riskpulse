@@ -270,7 +270,7 @@
 - [x] **React Force Graph / D3** force-directed network (d3-force)
 - [x] Nodes colored by risk (green/yellow/red)
 - [x] Click node → details + recent txns + metrics
-- [ ] Highlight detected cycles / mule clusters
+- [x] Highlight detected cycles / mule clusters (Tarjan SCC + fan-in, client-side over the live subgraph)
 - [ ] Pre-approval sim animation (new edge → re-decide)
 
 ### 4.6 Analyst Workbench (Section 6.1)
@@ -291,19 +291,19 @@
 ### 4.8 Custom Rule Builder UI (Section 6.3)
 *Owners: Paridhi + Bhoomi*
 - [x] Form with dropdowns: field / operator / value / action
-- [ ] Enable-disable + priority ordering
+- [x] Enable-disable + priority ordering
 - [x] Preview how many past txns a rule would catch (`POST /api/v1/rules/preview`)
 - [x] Push live (no redeploy)
 
 ### 4.9 Fraud Contagion Heatmap (Section 5.4 viz)
 *Owners: Nihanshi*
-- [x] Graph nodes colored by exposure score, hop-distance shading (1→3, live from `/api/v1/graph/exposed`)
-- [ ] "Watch fraud spread" animation on confirm-fraud
-- [ ] Toggle contagion overlay on the graph
+- [x] Graph nodes colored by exposure score, hop-distance shading (1→3, live from `/api/v1/graph/exposed`; also drives ForceGraph node color in contagion mode)
+- [x] "Watch fraud spread" animation — manual replay of the real per-hop exposure data (no persisted per-event timeline exists to auto-trigger on confirm-fraud, so this is an honest replay button, not a live event hook)
+- [x] Toggle contagion overlay on the graph (now applies to the live force-directed graph, not just the decorative fallback)
 
 ### 4.10 Model Health Monitor page (Section 6.6)
 *Owners: Nihanshi + Bhoomi*
-- [ ] Line graphs: F1 / precision / recall / FPR over 7/30/90d (chart is still mock; KPIs above it are live)
+- [x] Line graphs: F1 / precision / recall / FPR over each recorded evaluation, live from `metrics_history` (falls back to the illustrative 90d mock until ≥2 retrains exist)
 - [x] Drift indicator
 - [x] System panel: latency p50/p95/p99, volume, alert count
 - [x] Model version history + comparison

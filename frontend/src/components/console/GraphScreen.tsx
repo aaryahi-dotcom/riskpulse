@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Blueprint } from '../ui/Blueprint';
 import { ForceGraph } from './ForceGraph';
 import { exposed, nodeMetrics as mockNodeMetrics, RED, AMBER } from '../../lib/mock';
@@ -56,6 +56,7 @@ export function GraphScreen({ rp }: { rp: RiskPulse }) {
   const [lookedUp, setLookedUp] = useState<string | null>(null);
   const [subgraph, setSubgraph] = useState<SubgraphDTO | null>(null);
   const [exposedAccounts, setExposedAccounts] = useState<ExposedAccountDTO[] | null>(null);
+  const [replayHop, setReplayHop] = useState<number | null>(null);
 
   const lookup = (id: string) => {
     if (!id) return;
@@ -73,6 +74,20 @@ export function GraphScreen({ rp }: { rp: RiskPulse }) {
   const hasLiveExposure = !!exposedAccounts && exposedAccounts.length > 0;
   const displayExposed = hasLiveExposure ? toExposedRows(exposedAccounts!) : exposed;
   const displayHeat = hasLiveExposure ? liveHeatCells(exposedAccounts!) : rp.heat;
+  const exposureById = useMemo(
+    () => new Map((exposedAccounts ?? []).map((a) => [a.user_id, a.exposure_score])),
+    [exposedAccounts],
+  );
+
+  // checklist 4.9: "watch fraud spread" — replays the real, already-computed
+  // per-hop exposure outward from hop 1 to hop 4, on demand (there's no
+  // persisted per-event timeline to animate against automatically on
+  // confirm-fraud, so this is a manual replay of real hop data rather than
+  // a live-triggered animation).
+  const replaySpread = () => {
+    [1, 2, 3, 4].forEach((h, i) => window.setTimeout(() => setReplayHop(h), i * 550));
+    window.setTimeout(() => setReplayHop(null), 4 * 550 + 900);
+  };
 
   return (
     <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 300px', gap: 22, alignItems: 'start' }}>
@@ -92,8 +107,8 @@ export function GraphScreen({ rp }: { rp: RiskPulse }) {
             </span>
           </div>
           <div style={{ position: 'relative' }}>
-            {rp.gmode === 'network' && subgraph ? (
-              <ForceGraph data={subgraph} width={760} height={420} selectedId={displayId} onSelect={lookup} />
+            {subgraph ? (
+              <ForceGraph data={subgraph} width={760} height={420} selectedId={displayId} onSelect={lookup} mode={rp.gmode === 'contagion' ? 'contagion' : 'risk'} exposureById={exposureById} />
             ) : (
               <>
                 <svg viewBox="0 0 760 420" style={{ width: '100%', display: 'block' }}>
@@ -107,14 +122,26 @@ export function GraphScreen({ rp }: { rp: RiskPulse }) {
             )}
           </div>
           <p style={{ margin: 0, padding: '11px 16px', borderTop: '1px solid var(--color-divider)', fontSize: 11.5, color: 'color-mix(in srgb,var(--color-text) 65%,transparent)' }}>
-            {rp.gmode === 'network' && subgraph ? `Live ego-network around ${displayId} · ${subgraph.nodes.length} nodes, ${subgraph.edges.length} edges · force-directed layout from /api/v1/graph/subgraph.` : rp.graphNote}
+            {subgraph
+              ? `Live ego-network around ${displayId} · ${subgraph.nodes.length} nodes, ${subgraph.edges.length} edges · force-directed layout from /api/v1/graph/subgraph.${rp.gmode === 'contagion' ? ' Node color = live exposure_score.' : ' Dashed red ring = detected cycle; amber ring = high fan-in (possible mule).'}`
+              : rp.graphNote}
           </p>
         </Blueprint>
         <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr)', gap: 22 }}>
           <Blueprint style={{ padding: 16 }}>
-            <span style={{ display: 'block', fontSize: 10.5, letterSpacing: '.1em', textTransform: 'uppercase', color: 'color-mix(in srgb,var(--color-text) 58%,transparent)', marginBottom: 12 }}>Contagion heatmap · exposure by hop × hour{hasLiveExposure ? ' · live' : ''}</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+              <span style={{ fontSize: 10.5, letterSpacing: '.1em', textTransform: 'uppercase', color: 'color-mix(in srgb,var(--color-text) 58%,transparent)' }}>Contagion heatmap · exposure by hop × hour{hasLiveExposure ? ' · live' : ''}</span>
+              <button type="button" className="btn btn-ghost" style={{ marginLeft: 'auto', fontSize: 10.5, padding: '3px 8px' }} disabled={replayHop !== null} onClick={replaySpread}>
+                {replayHop !== null ? `Spreading · hop ${replayHop}` : 'Watch fraud spread ▶'}
+              </button>
+            </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(14,1fr)', gap: 2 }}>
-              {displayHeat.map((c, i) => <span key={i} style={{ aspectRatio: '1', background: c.bg }} />)}
+              {displayHeat.map((c, i) => {
+                const rowHop = Math.floor(i / 14) + 1;
+                const reached = replayHop === null || rowHop <= replayHop;
+                const isFront = replayHop !== null && rowHop === replayHop;
+                return <span key={i} style={{ aspectRatio: '1', background: c.bg, opacity: reached ? 1 : 0.12, transition: 'opacity .3s', outline: isFront ? `1px solid ${RED}` : 'none' }} />;
+              })}
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, fontSize: 10.5, color: 'color-mix(in srgb,var(--color-text) 58%,transparent)' }}>
               <span>low</span>
@@ -128,14 +155,18 @@ export function GraphScreen({ rp }: { rp: RiskPulse }) {
             <table className="table" style={{ fontSize: 12.5 }}>
               <thead><tr><th style={{ paddingLeft: 16 }}>Account</th><th>Hops</th><th>Exposure</th><th style={{ paddingRight: 16 }}>Next txn</th></tr></thead>
               <tbody>
-                {displayExposed.map((e) => (
-                  <tr key={e.a}>
+                {displayExposed.map((e) => {
+                  const hopNum = Number(e.h);
+                  const reached = replayHop === null || !Number.isFinite(hopNum) || hopNum <= replayHop;
+                  return (
+                  <tr key={e.a} style={{ opacity: reached ? 1 : 0.2, transition: 'opacity .3s' }}>
                     <td style={{ paddingLeft: 16, fontFamily: 'ui-monospace,Menlo,monospace', fontSize: 11 }}>{e.a}</td>
                     <td style={{ fontFeatureSettings: "'tnum' 1" }}>{e.h}</td>
                     <td><span style={{ display: 'flex', alignItems: 'center', gap: 6 }}><span style={{ width: 52, height: 6, background: 'color-mix(in srgb,var(--color-text) 10%,transparent)' }}><span style={{ display: 'block', height: 6, width: e.w, background: e.c }} /></span><span style={{ fontFeatureSettings: "'tnum' 1" }}>{e.v}</span></span></td>
                     <td style={{ paddingRight: 16, fontSize: 11, color: e.c }}>{e.n}</td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </Blueprint>

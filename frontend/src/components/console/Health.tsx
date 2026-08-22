@@ -4,6 +4,20 @@ import { healthKpis as mockKpis, healthLegend, healthSeries, deployMarks, import
 import { getModelHealth, retrainModel, type ModelHealthDTO } from '../../lib/api';
 import type { RiskPulse } from '../../state/useRiskPulse';
 
+// Real F1/precision/recall/FPR over time, from every recorded training
+// evaluation (checklist 4.10) — plotted on a fixed [0,1] y-axis rather
+// than mock.ts's auto-scaling `line()` helper, since these four series
+// need to stay comparable to each other, not each stretched to fill the
+// chart. X-axis is "each recorded evaluation" (chronological, oldest
+// first), not a fixed day range — retrains happen on demand, not daily,
+// so a real trend here is naturally sparser than the illustrative mock.
+function metricsPath(values: number[], w: number, h: number, pad = 6): string {
+  if (values.length < 2) return '';
+  const sx = w / (values.length - 1);
+  const ih = h - pad * 2;
+  return values.map((y, i) => `${i ? 'L' : 'M'}${(i * sx).toFixed(1)} ${(pad + ih - Math.max(0, Math.min(1, y)) * ih).toFixed(1)}`).join(' ');
+}
+
 function toLatencyRows(l: ModelHealthDTO['latency_ms']) {
   const budget = 100;
   const rows: { k: string; v: string; w: string; c: string; budget: string }[] = [
@@ -42,6 +56,17 @@ export function Health({ rp }: { rp: RiskPulse }) {
       }))
     : mockVersions;
 
+  const chronological = health ? [...health.metrics_history].reverse() : [];
+  const hasHistory = chronological.length >= 2;
+  const metricsLines = hasHistory
+    ? [
+        { k: 'F1', c: 'var(--color-accent)', d: metricsPath(chronological.map((m) => m.f1), 600, 200) },
+        { k: 'Precision', c: GREEN, d: metricsPath(chronological.map((m) => m.precision), 600, 200) },
+        { k: 'Recall', c: AMBER, d: metricsPath(chronological.map((m) => m.recall), 600, 200) },
+        { k: 'FPR', c: RED, d: metricsPath(chronological.map((m) => m.false_positive_rate), 600, 200) },
+      ]
+    : [];
+
   const doRetrain = async () => {
     setRetraining(true);
     setRetrainMsg(null);
@@ -68,19 +93,26 @@ export function Health({ rp }: { rp: RiskPulse }) {
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,7fr) minmax(0,5fr)', gap: 22 }}>
         <Blueprint style={{ padding: 18 }}>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 14, marginBottom: 14 }}>
-            <span style={{ fontSize: 10.5, letterSpacing: '.1em', textTransform: 'uppercase', color: 'color-mix(in srgb,var(--color-text) 58%,transparent)' }}>Metrics from analyst feedback · 90 days</span>
+            <span style={{ fontSize: 10.5, letterSpacing: '.1em', textTransform: 'uppercase', color: 'color-mix(in srgb,var(--color-text) 58%,transparent)' }}>{hasHistory ? 'F1 / precision / recall / FPR · each recorded evaluation' : 'Metrics from analyst feedback · 90 days'}</span>
             <span style={{ marginLeft: 'auto', display: 'flex', gap: 14, fontSize: 11 }}>
-              {healthLegend.map((l) => (
+              {(hasHistory ? metricsLines : healthLegend).map((l) => (
                 <span key={l.k} style={{ display: 'flex', alignItems: 'center', gap: 5 }}><span style={{ width: 14, height: 2, background: l.c }} />{l.k}</span>
               ))}
             </span>
           </div>
           <svg viewBox="0 0 600 200" preserveAspectRatio="none" style={{ width: '100%', height: 200 }}>
             {rp.gridLines.map((g) => <line key={g.y} x1="0" y1={g.y} x2="600" y2={g.y} stroke="color-mix(in srgb, currentColor 10%, transparent)" />)}
-            {healthSeries.map((s, i) => <path key={i} d={s.d} fill="none" stroke={s.c} strokeWidth="2" strokeDasharray={s.dash} />)}
-            {deployMarks.map((m, i) => <line key={i} x1={m.x} y1="0" x2={m.x} y2="200" stroke="var(--color-accent)" strokeWidth="1" strokeDasharray="2 4" opacity="0.7" />)}
+            {hasHistory
+              ? metricsLines.map((s, i) => <path key={i} d={s.d} fill="none" stroke={s.c} strokeWidth="2" />)
+              : healthSeries.map((s, i) => <path key={i} d={s.d} fill="none" stroke={s.c} strokeWidth="2" strokeDasharray={s.dash} />)}
+            {!hasHistory && deployMarks.map((m, i) => <line key={i} x1={m.x} y1="0" x2={m.x} y2="200" stroke="var(--color-accent)" strokeWidth="1" strokeDasharray="2 4" opacity="0.7" />)}
           </svg>
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10.5, marginTop: 6, color: 'color-mix(in srgb,var(--color-text) 52%,transparent)' }}><span>−90d</span><span>−60d</span><span>−30d</span><span>today</span></div>
+          {hasHistory ? (
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10.5, marginTop: 6, color: 'color-mix(in srgb,var(--color-text) 52%,transparent)' }}><span>{chronological[0].model_version}</span><span>{chronological[chronological.length - 1].model_version}</span></div>
+          ) : (
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10.5, marginTop: 6, color: 'color-mix(in srgb,var(--color-text) 52%,transparent)' }}><span>−90d</span><span>−60d</span><span>−30d</span><span>today</span></div>
+          )}
+          {!hasHistory && health && <p style={{ margin: '8px 0 0', fontSize: 10.5, color: 'color-mix(in srgb,var(--color-text) 55%,transparent)' }}>Only {chronological.length} recorded evaluation so far — retrain a few more times for a real trend line.</p>}
         </Blueprint>
         <Blueprint style={{ padding: 18 }}>
           <span style={{ display: 'block', fontSize: 10.5, letterSpacing: '.1em', textTransform: 'uppercase', color: 'color-mix(in srgb,var(--color-text) 58%,transparent)', marginBottom: 12 }}>Feature importance &amp; drift</span>

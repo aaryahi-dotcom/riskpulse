@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
 import { Blueprint } from '../ui/Blueprint';
 import { rules as mockRules, builderRows, RED, AMBER, GREEN, tint } from '../../lib/mock';
-import { listRules, getRuleStats, createRule, previewRule, type RuleDTO, type RulePreviewDTO } from '../../lib/api';
+import { listRules, getRuleStats, createRule, previewRule, updateRule, type RuleDTO, type RulePreviewDTO } from '../../lib/api';
 
-type DisplayRule = typeof mockRules[number];
+type DisplayRule = typeof mockRules[number] & { id?: string; active?: boolean };
 
 const actionColor = (r: RuleDTO) => (r.action === 'override' ? RED : r.forced_tier === 'block' ? RED : AMBER);
 const actionLabel = (r: RuleDTO) =>
@@ -26,6 +26,7 @@ async function loadLiveRules(): Promise<DisplayRule[]> {
       const precision = stats?.precision_estimate != null ? stats.precision_estimate.toFixed(2) : '—';
       const c = actionColor(r);
       return {
+        id: r.id, active: r.active,
         name: r.name, action: actionLabel(r), c, tint: tint(c), pr: r.priority,
         cond: `IF ${conditionText(r.condition_json)} THEN ${actionLabel(r)}`,
         stats: [
@@ -74,7 +75,16 @@ export function Rules() {
   };
   useEffect(refresh, []);
 
-  const displayRules = liveRules ?? mockRules;
+  const displayRules: DisplayRule[] = liveRules ?? mockRules;
+
+  const toggleActive = (r: DisplayRule) => {
+    if (!r.id) return;
+    updateRule(r.id, { active: !r.active }).then(refresh).catch(() => {});
+  };
+  const move = (r: DisplayRule, dir: -1 | 1) => {
+    if (!r.id) return;
+    updateRule(r.id, { priority: r.pr + dir }).then(refresh).catch(() => {});
+  };
 
   const setRow = (i: number, patch: Partial<BuilderRow>) => {
     setRows((prev) => prev.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
@@ -127,11 +137,20 @@ export function Rules() {
           <span style={{ marginLeft: 'auto', fontSize: 11.5, color: 'color-mix(in srgb,var(--color-text) 60%,transparent)' }}>{liveRules ? 'Live from /api/v1/rules' : 'Evaluated alongside the model · no retraining'}</span>
         </div>
         {displayRules.map((r) => (
-          <div key={r.name} style={{ padding: '16px 18px', borderBottom: '1px solid color-mix(in srgb,var(--color-text) 8%,transparent)' }}>
+          <div key={r.name} style={{ padding: '16px 18px', borderBottom: '1px solid color-mix(in srgb,var(--color-text) 8%,transparent)', opacity: r.active === false ? 0.5 : 1 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
               <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 600, fontSize: 16, textTransform: 'uppercase' }}>{r.name}</span>
               <span className="tag" style={{ background: r.tint, color: r.c, fontSize: 10 }}>{r.action}</span>
-              <span style={{ marginLeft: 'auto', fontSize: 11, letterSpacing: '.08em', textTransform: 'uppercase', color: 'color-mix(in srgb,var(--color-text) 55%,transparent)' }}>Priority {r.pr}</span>
+              {r.id && (
+                <>
+                  <button type="button" className="btn btn-ghost" style={{ fontSize: 10.5, padding: '3px 8px' }} onClick={() => toggleActive(r)}>
+                    {r.active === false ? 'Enable' : 'Disable'}
+                  </button>
+                  <button type="button" className="btn btn-ghost" style={{ fontSize: 10.5, padding: '3px 8px' }} onClick={() => move(r, -1)} title="Run earlier">↑</button>
+                  <button type="button" className="btn btn-ghost" style={{ fontSize: 10.5, padding: '3px 8px' }} onClick={() => move(r, 1)} title="Run later">↓</button>
+                </>
+              )}
+              <span style={{ marginLeft: r.id ? 0 : 'auto', fontSize: 11, letterSpacing: '.08em', textTransform: 'uppercase', color: 'color-mix(in srgb,var(--color-text) 55%,transparent)' }}>Priority {r.pr}</span>
             </div>
             <code style={{ display: 'block', fontFamily: 'ui-monospace,Menlo,monospace', fontSize: 11.5, lineHeight: 1.6, marginTop: 8, padding: '9px 12px', background: 'var(--color-surface)', color: 'color-mix(in srgb,var(--color-text) 82%,transparent)' }}>{r.cond}</code>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 18, marginTop: 12 }}>

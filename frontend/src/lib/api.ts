@@ -225,6 +225,10 @@ export function createRule(payload: RuleCreatePayload): Promise<RuleDTO> {
   return authedJson<RuleDTO>('/api/v1/rules', { method: 'POST', body: JSON.stringify(payload) });
 }
 
+export function updateRule(ruleId: string, patch: { active?: boolean; priority?: number }): Promise<RuleDTO> {
+  return authedJson<RuleDTO>(`/api/v1/rules/${ruleId}`, { method: 'PATCH', body: JSON.stringify(patch) });
+}
+
 export interface RulePreviewDTO {
   sampled: number;
   matched: number;
