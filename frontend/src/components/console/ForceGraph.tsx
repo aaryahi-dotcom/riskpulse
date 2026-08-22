@@ -108,7 +108,7 @@ function layout(data: SubgraphDTO, width: number, height: number, ticks = 250) {
 }
 
 export function ForceGraph({
-  data, width, height, selectedId, onSelect, mode = 'risk', exposureById,
+  data, width, height, selectedId, onSelect, mode = 'risk', exposureById, ghost,
 }: {
   data: SubgraphDTO;
   width: number;
@@ -117,6 +117,13 @@ export function ForceGraph({
   onSelect?: (id: string) => void;
   mode?: 'risk' | 'contagion';
   exposureById?: Map<string, number>;
+  // checklist 4.5: pre-approval sim animation — a proposed edge from
+  // `sourceId` to `targetId`, drawn as a pulsing dashed line so the
+  // analyst can see exactly which existing node (or, if targetId isn't
+  // in this subgraph yet, a synthetic "new node" point) the what-if edge
+  // would connect to, while the real result comes back from
+  // /api/v1/graph/simulate-edge.
+  ghost?: { sourceId: string; targetId: string; forceBlock: boolean } | null;
 }) {
   const { nodes, links } = useMemo(() => layout(data, width, height), [data, width, height]);
 
@@ -127,6 +134,18 @@ export function ForceGraph({
       </div>
     );
   }
+
+  const sourceNode = ghost ? nodes.find((n) => n.id === ghost.sourceId) : undefined;
+  const targetNode = ghost ? nodes.find((n) => n.id === ghost.targetId) : undefined;
+  const ghostLine = sourceNode && ghost
+    ? {
+        x1: sourceNode.x!, y1: sourceNode.y!,
+        x2: targetNode ? targetNode.x! : sourceNode.x! + 68,
+        y2: targetNode ? targetNode.y! : sourceNode.y! - 54,
+        isNew: !targetNode,
+      }
+    : null;
+  const ghostColor = ghost?.forceBlock ? RED : AMBER;
 
   return (
     <svg viewBox={`0 0 ${width} ${height}`} style={{ width: '100%', display: 'block' }}>
@@ -158,6 +177,23 @@ export function ForceGraph({
           </g>
         );
       })}
+      {ghostLine && (
+        <g>
+          <line x1={ghostLine.x1} y1={ghostLine.y1} x2={ghostLine.x2} y2={ghostLine.y2}
+            stroke={ghostColor} strokeWidth={2.4} strokeDasharray="5 4">
+            <animate attributeName="stroke-dashoffset" from="18" to="0" dur="0.6s" repeatCount="indefinite" />
+          </line>
+          <circle cx={ghostLine.x2} cy={ghostLine.y2} r={ghostLine.isNew ? 9 : 13} fill="none" stroke={ghostColor} strokeWidth={2}>
+            <animate attributeName="r" values={`${ghostLine.isNew ? 9 : 13};${ghostLine.isNew ? 15 : 19};${ghostLine.isNew ? 9 : 13}`} dur="1.1s" repeatCount="indefinite" />
+            <animate attributeName="opacity" values="0.9;0.2;0.9" dur="1.1s" repeatCount="indefinite" />
+          </circle>
+          {ghostLine.isNew && (
+            <text x={ghostLine.x2} y={ghostLine.y2 + 22} textAnchor="middle" style={{ fontSize: 8, fontFamily: 'ui-monospace,Menlo,monospace', fill: ghostColor }}>
+              {ghost!.targetId.length > 14 ? ghost!.targetId.slice(0, 13) + '…' : ghost!.targetId}
+            </text>
+          )}
+        </g>
+      )}
     </svg>
   );
 }

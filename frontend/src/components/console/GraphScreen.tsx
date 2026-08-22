@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Blueprint } from '../ui/Blueprint';
 import { ForceGraph } from './ForceGraph';
 import { exposed, nodeMetrics as mockNodeMetrics, RED, AMBER } from '../../lib/mock';
-import { getGraphNode, getSubgraph, getExposedAccounts, type GraphNodeDTO, type SubgraphDTO, type ExposedAccountDTO } from '../../lib/api';
+import { getGraphNode, getSubgraph, getExposedAccounts, simulateGraphEdge, type GraphNodeDTO, type SubgraphDTO, type ExposedAccountDTO, type GraphEdgeSimDTO } from '../../lib/api';
 import type { RiskPulse, GraphMode } from '../../state/useRiskPulse';
 
 function toExposedRows(accounts: ExposedAccountDTO[]) {
@@ -57,6 +57,11 @@ export function GraphScreen({ rp }: { rp: RiskPulse }) {
   const [subgraph, setSubgraph] = useState<SubgraphDTO | null>(null);
   const [exposedAccounts, setExposedAccounts] = useState<ExposedAccountDTO[] | null>(null);
   const [replayHop, setReplayHop] = useState<number | null>(null);
+  const [simReceiver, setSimReceiver] = useState('');
+  const [simAmount, setSimAmount] = useState('250000');
+  const [simming, setSimming] = useState(false);
+  const [simResult, setSimResult] = useState<GraphEdgeSimDTO | null>(null);
+  const [simMsg, setSimMsg] = useState<string | null>(null);
 
   const lookup = (id: string) => {
     if (!id) return;
@@ -89,6 +94,21 @@ export function GraphScreen({ rp }: { rp: RiskPulse }) {
     window.setTimeout(() => setReplayHop(null), 4 * 550 + 900);
   };
 
+  const runEdgeSim = async () => {
+    if (!simReceiver.trim()) return;
+    setSimming(true);
+    setSimMsg(null);
+    setSimResult(null);
+    try {
+      const result = await simulateGraphEdge(displayId, simReceiver.trim(), parseFloat(simAmount) || 0);
+      setSimResult(result);
+    } catch {
+      setSimMsg('Backend unreachable — simulation unavailable.');
+    } finally {
+      setSimming(false);
+    }
+  };
+
   return (
     <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 300px', gap: 22, alignItems: 'start' }}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 22 }}>
@@ -108,7 +128,8 @@ export function GraphScreen({ rp }: { rp: RiskPulse }) {
           </div>
           <div style={{ position: 'relative' }}>
             {subgraph ? (
-              <ForceGraph data={subgraph} width={760} height={420} selectedId={displayId} onSelect={lookup} mode={rp.gmode === 'contagion' ? 'contagion' : 'risk'} exposureById={exposureById} />
+              <ForceGraph data={subgraph} width={760} height={420} selectedId={displayId} onSelect={lookup} mode={rp.gmode === 'contagion' ? 'contagion' : 'risk'} exposureById={exposureById}
+                ghost={simResult ? { sourceId: displayId, targetId: simReceiver.trim(), forceBlock: simResult.would_force_block } : null} />
             ) : (
               <>
                 <svg viewBox="0 0 760 420" style={{ width: '100%', display: 'block' }}>
@@ -189,6 +210,31 @@ export function GraphScreen({ rp }: { rp: RiskPulse }) {
             </div>
           ))}
           <button type="button" className="btn btn-primary btn-block" style={{ marginTop: 14 }}>Open case →</button>
+        </Blueprint>
+        <Blueprint style={{ padding: 16 }}>
+          <span style={{ display: 'block', fontSize: 10.5, letterSpacing: '.1em', textTransform: 'uppercase', color: 'color-mix(in srgb,var(--color-text) 58%,transparent)', marginBottom: 10 }}>Pre-approval sim · new edge from {displayId}</span>
+          <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+            <input className="input" placeholder="proposed receiver / VPA" value={simReceiver} onChange={(e) => { setSimReceiver(e.target.value); setSimResult(null); }} style={{ fontSize: 11.5, flex: 1 }} />
+          </div>
+          <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
+            <input className="input" placeholder="amount" value={simAmount} onChange={(e) => { setSimAmount(e.target.value); setSimResult(null); }} style={{ fontSize: 11.5, flex: 1 }} />
+            <button type="button" className="btn btn-secondary" style={{ fontSize: 11.5, padding: '6px 10px' }} disabled={simming || !simReceiver.trim()} onClick={runEdgeSim}>
+              {simming ? 'Testing…' : 'Preview edge'}
+            </button>
+          </div>
+          {simResult && (
+            <div style={{ padding: 10, border: `1px solid ${simResult.would_force_block ? RED : simResult.graph_flags.length ? AMBER : 'var(--color-divider)'}`, background: 'var(--color-surface)', fontSize: 11.5, lineHeight: 1.6 }}>
+              {simResult.would_force_block ? (
+                <span style={{ color: RED, fontFamily: 'var(--font-heading)', fontWeight: 600 }}>Would force BLOCK — completes a circuit back to {displayId} (CYCLE_DETECTED).</span>
+              ) : simResult.graph_flags.length ? (
+                <span style={{ color: AMBER }}>Would add +{simResult.score_delta.toFixed(2)} to the risk score: {simResult.graph_flags.join(', ')}.</span>
+              ) : (
+                <span style={{ color: 'color-mix(in srgb,var(--color-text) 60%,transparent)' }}>No graph-layer flags — this edge looks structurally unremarkable.</span>
+              )}
+            </div>
+          )}
+          {simMsg && <span style={{ fontSize: 11, color: RED }}>{simMsg}</span>}
+          <p style={{ margin: '10px 0 0', fontSize: 10.5, color: 'color-mix(in srgb,var(--color-text) 55%,transparent)' }}>Non-mutating — tests cycle/pagerank-spike/bridging signals only; no ML re-score (that needs the full feature pipeline for a real, not hypothetical, transaction).</p>
         </Blueprint>
         <Blueprint style={{ padding: 16 }}>
           <span style={{ display: 'block', fontSize: 10.5, letterSpacing: '.1em', textTransform: 'uppercase', color: 'color-mix(in srgb,var(--color-text) 58%,transparent)', marginBottom: 10 }}>Centrality drift · 7d</span>

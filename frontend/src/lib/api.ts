@@ -355,6 +355,19 @@ export function getExposedAccounts(threshold = 0.01, limit = 50): Promise<{ acco
   return authedJson<{ accounts: ExposedAccountDTO[] }>(`/api/v1/graph/exposed?threshold=${threshold}&limit=${limit}`);
 }
 
+export interface GraphEdgeSimDTO {
+  graph_flags: string[];
+  would_force_block: boolean;
+  score_delta: number;
+}
+
+export function simulateGraphEdge(senderId: string, receiverId: string, amount: number): Promise<GraphEdgeSimDTO> {
+  return authedJson<GraphEdgeSimDTO>('/api/v1/graph/simulate-edge', {
+    method: 'POST',
+    body: JSON.stringify({ sender_id: senderId, receiver_id: receiverId, amount }),
+  });
+}
+
 export interface LinkedTransactionDTO {
   txn_id: string;
   sender_id: string;

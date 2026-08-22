@@ -50,11 +50,19 @@ function buildScenario(key: ScenarioKey): ScorePayload[] {
 
 const decisionColor = (d: string) => (d === 'block' ? RED : d === 'step_up' ? AMBER : GREEN);
 
+const GUIDED_ORDER: { key: ScenarioKey; label: string }[] = [
+  { key: 'normal', label: 'Baseline traffic' },
+  { key: 'arrest', label: 'Digital arrest scam' },
+  { key: 'mule', label: 'Mule ring fan-in' },
+  { key: 'smurf', label: 'Smurfing under the reporting band' },
+];
+
 export function Simulator({ rp }: { rp: RiskPulse }) {
   const [log, setLog] = useState<LogRow[] | null>(null);
   const [series, setSeries] = useState<number[]>([]);
   const [stats, setStats] = useState<StatRow[] | null>(null);
   const [running, setRunning] = useState(false);
+  const [guidedStep, setGuidedStep] = useState<{ i: number; total: number; label: string } | null>(null);
 
   const runScenario = async (key: ScenarioKey) => {
     rp.runScenario(key);
@@ -102,6 +110,29 @@ export function Simulator({ rp }: { rp: RiskPulse }) {
     setRunning(false);
   };
 
+  // checklist 4.12: one-click reset — back to the pre-run idle state
+  // (mock log/series/stats fallback), without touching thresholds or
+  // any other console state.
+  const resetDemo = () => {
+    setLog(null);
+    setSeries([]);
+    setStats(null);
+    setGuidedStep(null);
+  };
+
+  // checklist 4.12: guided demo mode — plays every scenario back to back
+  // (each one a real run against /api/v1/score, same as clicking it
+  // individually), with a pause and a step label between them so a judge
+  // sees the full range without the presenter clicking four buttons.
+  const runGuidedDemo = async () => {
+    for (let i = 0; i < GUIDED_ORDER.length; i++) {
+      setGuidedStep({ i: i + 1, total: GUIDED_ORDER.length, label: GUIDED_ORDER[i].label });
+      await runScenario(GUIDED_ORDER[i].key);
+      await new Promise((r) => setTimeout(r, 1100));
+    }
+    setGuidedStep(null);
+  };
+
   const displayLog = log ?? mockLog;
   const displaySeries = series.length > 1 ? series : simSeries;
   const displayStats = stats ?? mockStats;
@@ -110,9 +141,16 @@ export function Simulator({ rp }: { rp: RiskPulse }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 22 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '13px 16px', border: '1px solid var(--color-divider)', background: 'var(--color-surface)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '13px 16px', border: '1px solid var(--color-divider)', background: 'var(--color-surface)', flexWrap: 'wrap' }}>
         <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 600, fontSize: 13, letterSpacing: '.09em', textTransform: 'uppercase' }}>Demo tool — not the product</span>
         <span style={{ fontSize: 12.5, color: 'color-mix(in srgb,var(--color-text) 70%,transparent)' }}>Judges cannot wait for real fraud. The simulator injects scripted sequences into the same scoring API a bank would call.</span>
+        <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
+          {guidedStep && <span style={{ fontSize: 11, color: 'var(--color-accent-700)' }}>Step {guidedStep.i}/{guidedStep.total} · {guidedStep.label}</span>}
+          <button type="button" className="btn btn-secondary" style={{ fontSize: 11.5 }} disabled={running} onClick={runGuidedDemo}>
+            {guidedStep ? 'Running guided demo…' : 'Guided demo ▶'}
+          </button>
+          <button type="button" className="btn btn-ghost" style={{ fontSize: 11.5 }} disabled={running} onClick={resetDemo}>Reset</button>
+        </span>
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 20 }}>
         {rp.scenarios.map((s) => (

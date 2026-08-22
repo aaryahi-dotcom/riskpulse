@@ -271,7 +271,7 @@
 - [x] Nodes colored by risk (green/yellow/red)
 - [x] Click node → details + recent txns + metrics
 - [x] Highlight detected cycles / mule clusters (Tarjan SCC + fan-in, client-side over the live subgraph)
-- [ ] Pre-approval sim animation (new edge → re-decide)
+- [x] Pre-approval sim animation (new edge → re-decide) — `POST /api/v1/graph/simulate-edge`, non-mutating, animated ghost edge; reports the real, documented graph-flag effect (CYCLE_DETECTED forces block) without faking an ML re-score
 
 ### 4.6 Analyst Workbench (Section 6.1)
 *Owners: Nihanshi + Arya + Bhoomi*
@@ -320,7 +320,7 @@
 - [x] Scenarios: normal_traffic · digital_arrest · mule_ring — injected as real payloads into `POST /api/v1/score` (no separate `/simulate` endpoint exists or is needed)
 - [x] Add **smurfing** (many small amounts under reporting threshold)
 - [x] "Run scenario" → plays out live against the real scoring pipeline
-- [ ] One-click reset / guided demo mode
+- [x] One-click reset / guided demo mode
 - [ ] Keep the honesty modal updated per phase
 
 ---

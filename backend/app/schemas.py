@@ -194,6 +194,18 @@ class RulePreviewOut(BaseModel):
     match_rate: float
 
 
+class GraphEdgeSimIn(BaseModel):
+    sender_id: str
+    receiver_id: str
+    amount: float
+
+
+class GraphEdgeSimOut(BaseModel):
+    graph_flags: list[str]
+    would_force_block: bool
+    score_delta: float
+
+
 # ---------------------------------------------------------------------
 # checklist 2.6 — feedback loop + retraining
 # ---------------------------------------------------------------------

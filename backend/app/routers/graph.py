@@ -12,6 +12,8 @@ import math
 from fastapi import APIRouter, Depends, HTTPException, Request
 
 from ..contagion import BASE_EXPOSURE, DECAY_PER_HOP
+from ..decision import GRAPH_CYCLE_FLAG, graph_flags_augment_delta
+from ..schemas import GraphEdgeSimIn, GraphEdgeSimOut
 from ..security import get_current_subject
 
 router = APIRouter(prefix="/api/v1/graph", tags=["graph"])
@@ -54,6 +56,34 @@ def graph_subgraph(
         return {"user_id": user_id, "depth": depth, "nodes": [], "edges": []}
     data = graph_service.local_subgraph(user_id, depth=depth)
     return {"user_id": user_id, "depth": depth, **data}
+
+
+@router.post("/simulate-edge", response_model=GraphEdgeSimOut)
+def graph_simulate_edge(
+    payload: GraphEdgeSimIn,
+    request: Request,
+    subject: str = Depends(get_current_subject),
+) -> dict:
+    """checklist 4.5: "pre-approval sim animation (new edge -> re-decide)"
+    — runs the real, non-mutating graph_service.simulate_pre_approval
+    against a proposed (not-yet-scored, nothing persisted) edge and
+    reports its real, documented effect on the decision aggregator (see
+    decision.aggregate_decision's precedence order): CYCLE_DETECTED is a
+    deterministic override straight to block, and the other two flags
+    contribute their fixed, documented score deltas. This does NOT run
+    the ML model or return a final decision — an ml_score for a
+    hypothetical, un-scored transaction doesn't exist without running
+    the full online-feature pipeline, so that's honestly left out rather
+    than faked."""
+    graph_service = getattr(request.app.state, "graph_service", None)
+    if graph_service is None:
+        return {"graph_flags": [], "would_force_block": False, "score_delta": 0.0}
+    flags = graph_service.simulate_pre_approval(payload.sender_id, payload.receiver_id, payload.amount)
+    return {
+        "graph_flags": flags,
+        "would_force_block": GRAPH_CYCLE_FLAG in flags,
+        "score_delta": graph_flags_augment_delta(flags),
+    }
 
 
 @router.get("/exposed")
