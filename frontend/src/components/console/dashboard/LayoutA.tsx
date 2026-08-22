@@ -108,6 +108,11 @@ export function LayoutA({ rp }: { rp: RiskPulse }) {
             </div>
           ))}
           <p style={{ margin: '12px 0 0', fontSize: 11.5, lineHeight: 1.5, color: 'color-mix(in srgb,var(--color-text) 62%,transparent)' }}>Base value {rp.shapBase} → output {rp.sel.score}. TreeExplainer, computed in the response path (~4 ms).</p>
+          <ul style={{ margin: '10px 0 0', padding: '10px 0 0 18px', borderTop: '1px solid var(--color-divider)', display: 'flex', flexDirection: 'column', gap: 4 }}>
+            {rp.shapReasons.map((r, i) => (
+              <li key={i} style={{ fontSize: 11.5, lineHeight: 1.5, color: 'color-mix(in srgb,var(--color-text) 78%,transparent)' }}>{r}</li>
+            ))}
+          </ul>
         </Blueprint>
       </div>
     </div>

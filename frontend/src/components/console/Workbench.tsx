@@ -131,6 +131,11 @@ export function Workbench({ rp }: { rp: RiskPulse }) {
                   <span style={{ fontSize: 11, fontFeatureSettings: "'tnum' 1", textAlign: 'right', color: s.c }}>{s.v}</span>
                 </div>
               ))}
+              <ul style={{ margin: '10px 0 0', padding: '8px 0 0 16px', borderTop: '1px solid var(--color-divider)', display: 'flex', flexDirection: 'column', gap: 3 }}>
+                {rp.shapReasons.map((r, i) => (
+                  <li key={i} style={{ fontSize: 10.5, lineHeight: 1.45, color: 'color-mix(in srgb,var(--color-text) 78%,transparent)' }}>{r}</li>
+                ))}
+              </ul>
             </div>
             <div style={{ padding: 18, borderLeft: '1px solid var(--color-divider)' }}>
               <span style={{ display: 'block', fontSize: 10.5, letterSpacing: '.1em', textTransform: 'uppercase', color: 'color-mix(in srgb,var(--color-text) 58%,transparent)', marginBottom: 8 }}>Neighbourhood · 2 hop</span>

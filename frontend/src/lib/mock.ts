@@ -48,6 +48,21 @@ export const SHAP: [string, number][] = [
   ['device_known', -0.07],
 ];
 
+// checklist 4.4: plain-English sentences for the demo/mock SHAP rows above
+// (the same feature-name -> template mapping the backend runs for real
+// scores in decision.py's shap_to_reasons, kept small here since this only
+// covers the fixed illustrative SHAP set, not the full model feature list).
+export const MOCK_SHAP_REASONS: Record<string, string> = {
+  new_beneficiary_burst: 'More new beneficiaries paid in a short window than usual — a burst of first-time transfers.',
+  amount_regularity: 'Recent transfer amounts are unusually mechanical/regular — a puppet-like pattern.',
+  timing_regularity: 'Recent transfer timing is unusually regular — intervals too evenly spaced to be organic.',
+  vpa_entropy: 'The receiver handle looks randomly generated rather than a human-chosen name.',
+  pagerank_delta_24h: "This account's influence in the transaction graph jumped sharply in the last 24h.",
+  exposure_score: 'This account is reachable from a confirmed-fraud account within a few hops.',
+  beneficiary_age: 'The receiving account is well-established, lowering risk.',
+  device_known: 'A previously-seen device was used, lowering risk.',
+};
+
 export const VOL = [180, 142, 96, 71, 58, 64, 110, 205, 320, 398, 432, 455, 470, 462, 441, 458, 489, 510, 548, 572, 530, 462, 368, 262];
 export const FLG = [12, 9, 7, 5, 4, 5, 8, 14, 19, 22, 26, 24, 25, 23, 21, 24, 28, 31, 36, 41, 34, 27, 20, 15];
 

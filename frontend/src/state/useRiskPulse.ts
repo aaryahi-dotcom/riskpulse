@@ -1,14 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   GREEN, AMBER, RED, tint, money, line, area,
-  RAW_SEED, SHAP, VOL, FLG, genTxn,
+  RAW_SEED, SHAP, MOCK_SHAP_REASONS, VOL, FLG, genTxn,
   FROM_POOL, TO_POOL, pick, genLiveAmount, genChannel,
   NAV_DEFS, SCREEN_TITLE, SCREEN_NOTE,
   GN, GL, nodeLabelDefs, prSeries,
   scenarios as SCENARIOS, simStatusLabel,
   type RawTxn, type ScenarioKey,
 } from '../lib/mock';
-import { scoreTransaction, getThresholds, updateThresholds, getThresholdPreview, WS_BASE_URL, type ThresholdPreviewDTO } from '../lib/api';
+import { scoreTransaction, getThresholds, updateThresholds, getThresholdPreview, WS_BASE_URL, type ThresholdPreviewDTO, type ShapReasonDTO } from '../lib/api';
 
 export type { ScenarioKey } from '../lib/mock';
 
@@ -44,6 +44,11 @@ export function useRiskPulse() {
   // backend. Rows scored via the mock fallback simply have no entry here,
   // so the SHAP panel falls back to the static demo array for them.
   const [shapMap, setShapMap] = useState<Record<string, [string, number][]>>({});
+  // Server-computed plain-English reason strings per feature (checklist
+  // 4.4/1.5), keyed by txn id, alongside the raw shapMap values above —
+  // same real/mock-fallback split, just carrying the human-readable text
+  // instead of raw feature names.
+  const [shapReasonsMap, setShapReasonsMap] = useState<Record<string, ShapReasonDTO[]>>({});
   const [liveReplay, setLiveReplay] = useState<ThresholdPreviewDTO | null>(null);
   const [publishMsg, setPublishMsg] = useState<string | null>(null);
   const [publishing, setPublishing] = useState(false);
@@ -130,6 +135,9 @@ export function useRiskPulse() {
           if (msg.shap_values) {
             setShapMap((prev) => ({ ...prev, [msg.txn_id]: Object.entries(msg.shap_values) as [string, number][] }));
           }
+          if (msg.shap_reasons) {
+            setShapReasonsMap((prev) => ({ ...prev, [msg.txn_id]: msg.shap_reasons as ShapReasonDTO[] }));
+          }
           setFeed((prev) => [row, ...prev].slice(0, 14));
           if (msg.decision === 'block') {
             pushToast(msg.txn_id, `${msg.txn_id} blocked · risk ${Number(msg.risk_score).toFixed(2)} · ${msg.sender_id} → ${msg.receiver_id}`, RED);
@@ -171,6 +179,7 @@ export function useRiskPulse() {
             ...prev,
             [resp.txn_id]: Object.entries(resp.shap_values) as [string, number][],
           }));
+          setShapReasonsMap((prev) => ({ ...prev, [resp.txn_id]: resp.shap_reasons }));
           if (!wsConnectedRef.current && !seenTxnIds.current.has(resp.txn_id)) {
             seenTxnIds.current.add(resp.txn_id);
             const time = new Date().toTimeString().slice(0, 8);
@@ -315,6 +324,16 @@ export function useRiskPulse() {
       c: v > 0 ? RED : GREEN,
     }));
   }, [selectedRow, shapMap]);
+
+  // checklist 4.4: plain-English driver summary — the top real reasons from
+  // the backend's shap_to_reasons() for this txn if we have them, else the
+  // fixed mock-name -> sentence mapping for the illustrative demo SHAP set.
+  const shapReasons = useMemo(() => {
+    const realId = selectedRow?.raw[0];
+    const real = realId ? shapReasonsMap[realId] : undefined;
+    if (real && real.length) return real.slice(0, 4).map((r) => r.reason);
+    return SHAP.slice(0, 4).map(([n]) => MOCK_SHAP_REASONS[n] ?? `${n.replace(/_/g, ' ')} contributed to this score.`);
+  }, [selectedRow, shapReasonsMap]);
 
   const kpis = useMemo(() => [
     { k: 'Scored today', v: '1,84,203', d: '+6.2%', c: 'var(--color-accent-700)', spark: line(VOL, 120, 22) },
@@ -482,7 +501,7 @@ export function useRiskPulse() {
     goLanding, goApp, goAuthIn, goAuthUp, goSim,
     themeGlyph: theme === 'dark' ? '☀' : '☾',
     // feed / selection
-    feed: feedRows, pickTxn, sel, split, hist, shap,
+    feed: feedRows, pickTxn, sel, split, hist, shap, shapReasons,
     // feed filters (4.3)
     filterChannel, setFilterChannel, filterDecision, setFilterDecision, filterMinScore, setFilterMinScore,
     availableChannels, feedTotal: allFeedRows.length,

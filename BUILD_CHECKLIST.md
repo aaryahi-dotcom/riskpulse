@@ -262,8 +262,8 @@
 ### 4.4 Explainability visuals
 *Owners: Nihanshi + Bhoomi*
 - [x] SHAP contribution bars + "what's driving risk" (avg |SHAP|)
-- [ ] **SHAP waterfall** per single decision
-- [ ] Plain-English driver summary
+- [x] **SHAP waterfall** per single decision (diverging per-feature bars from a shared center baseline, Score & Decide panel + Workbench)
+- [x] Plain-English driver summary — backend's `shap_to_reasons()` sentences now flow through the WS broadcast + score response into `shapReasonsMap`, rendered as a sentence list under the waterfall in both panels (mock-name sentence fallback when no real txn is selected)
 
 ### 4.5 Transaction graph viz ("wow" visual)
 *Owners: Nihanshi + Paridhi*

@@ -225,6 +225,7 @@ def score_transaction(
                     "puppet_score": response.puppet_score,
                     "reason_code": response.reason_code,
                     "shap_values": response.shap_values,
+                    "shap_reasons": [r.model_dump() for r in response.shap_reasons],
                 }),
                 loop,
             )
