@@ -6,7 +6,7 @@ import logging
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from sqlalchemy import desc
+from sqlalchemy import desc, or_
 from sqlalchemy.orm import Session
 
 from ..db import get_db
@@ -243,6 +243,32 @@ def score_history(
     rows = (
         db.query(ScoredTransaction)
         .filter(ScoredTransaction.sender_id == user_id)
+        .order_by(desc(ScoredTransaction.created_at))
+        .limit(n)
+        .all()
+    )
+    return rows
+
+
+@router.get("/linked/{txn_id}", response_model=list[ScoredTransactionOut])
+def linked_transactions(
+    txn_id: str,
+    n: int = 10,
+    db: Session = Depends(get_db),
+    subject: str = Depends(get_current_subject),
+) -> list[ScoredTransaction]:
+    """checklist 4.6: other transactions sharing either party with
+    `txn_id` — the Workbench's "linked transactions" panel. Matches on
+    sender_id OR receiver_id so both "same beneficiary, different
+    senders" (mule fan-in) and "same sender, different beneficiaries"
+    (fan-out / smurfing) show up, not just one direction."""
+    txn = db.query(ScoredTransaction).filter(ScoredTransaction.txn_id == txn_id).first()
+    if txn is None:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    rows = (
+        db.query(ScoredTransaction)
+        .filter(ScoredTransaction.txn_id != txn_id)
+        .filter(or_(ScoredTransaction.sender_id == txn.sender_id, ScoredTransaction.receiver_id == txn.receiver_id))
         .order_by(desc(ScoredTransaction.created_at))
         .limit(n)
         .all()

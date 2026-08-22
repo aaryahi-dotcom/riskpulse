@@ -14,6 +14,7 @@ BackgroundTask, same no-Celery convention as routers/admin.py's /retrain.
 from __future__ import annotations
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
+from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
 from ..contagion import propagate_contagion
@@ -76,3 +77,39 @@ def list_feedback(
     if txn_id:
         q = q.filter(Feedback.txn_id == txn_id)
     return q.order_by(Feedback.created_at.desc()).limit(n).all()
+
+
+@router.get("/stats")
+def feedback_stats(
+    created_by: str | None = None,
+    n: int = 500,
+    db: Session = Depends(get_db),
+    subject: str = Depends(get_current_subject),
+) -> dict:
+    """checklist 4.6: aggregated counts behind the Workbench's "analyst
+    accuracy" panel. Defaults to the CALLING analyst's own feedback
+    (`created_by` defaults to the authenticated subject) — an analyst's
+    dashboard shows their own review history, not everyone's. Only
+    "agreement rate" (feedback given without an override) is reported as
+    an accuracy proxy — whether an upheld/overturned call was itself
+    later validated needs a second reviewer this project doesn't model,
+    so that's not claimed here."""
+    who = created_by or subject
+    rows = (
+        db.query(Feedback)
+        .filter(Feedback.created_by == who)
+        .order_by(desc(Feedback.created_at))
+        .limit(n)
+        .all()
+    )
+    total = len(rows)
+    overrides = sum(1 for r in rows if r.overridden_decision)
+    fraud_confirmed = sum(1 for r in rows if r.confirmed_label == "fraud")
+    agreement_rate = (total - overrides) / total if total else 0.0
+    return {
+        "analyst": who,
+        "total_reviewed": total,
+        "overrides": overrides,
+        "fraud_confirmed": fraud_confirmed,
+        "agreement_rate": round(agreement_rate, 4),
+    }

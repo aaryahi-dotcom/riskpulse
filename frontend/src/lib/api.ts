@@ -312,6 +312,60 @@ export function submitFeedback(txnId: string, confirmedLabel: 'fraud' | 'legit',
   });
 }
 
+export function getFeedbackForTxn(txnId: string): Promise<FeedbackDTO[]> {
+  return authedJson<FeedbackDTO[]>(`/api/v1/feedback?txn_id=${encodeURIComponent(txnId)}`);
+}
+
+export interface FeedbackStatsDTO {
+  analyst: string;
+  total_reviewed: number;
+  overrides: number;
+  fraud_confirmed: number;
+  agreement_rate: number;
+}
+
+export function getFeedbackStats(): Promise<FeedbackStatsDTO> {
+  return authedJson<FeedbackStatsDTO>('/api/v1/feedback/stats');
+}
+
+export interface ExposedAccountDTO {
+  user_id: string;
+  exposure_score: number;
+  approx_hop: number | null;
+}
+
+export function getExposedAccounts(threshold = 0.01, limit = 50): Promise<{ accounts: ExposedAccountDTO[] }> {
+  return authedJson<{ accounts: ExposedAccountDTO[] }>(`/api/v1/graph/exposed?threshold=${threshold}&limit=${limit}`);
+}
+
+export interface LinkedTransactionDTO {
+  txn_id: string;
+  sender_id: string;
+  receiver_id: string;
+  amount: number;
+  channel: string;
+  risk_score: number;
+  decision: string;
+  puppet_score: number;
+  model_version: string;
+  created_at: string;
+}
+
+export function getLinkedTransactions(txnId: string, n = 10): Promise<LinkedTransactionDTO[]> {
+  return authedJson<LinkedTransactionDTO[]>(`/api/v1/score/linked/${encodeURIComponent(txnId)}?n=${n}`);
+}
+
+export interface AuditDTO {
+  txn_id: string;
+  created_at: string;
+  decision: string;
+  risk_score: number;
+}
+
+export function getAudit(txnId: string): Promise<AuditDTO> {
+  return authedJson<AuditDTO>(`/api/v1/score/audit/${encodeURIComponent(txnId)}`);
+}
+
 export interface GraphNodeDTO {
   user_id: string;
   present: boolean;

@@ -1,9 +1,43 @@
 import { useEffect, useState } from 'react';
 import { Blueprint } from '../ui/Blueprint';
 import { ForceGraph } from './ForceGraph';
-import { exposed, nodeMetrics as mockNodeMetrics, RED } from '../../lib/mock';
-import { getGraphNode, getSubgraph, type GraphNodeDTO, type SubgraphDTO } from '../../lib/api';
+import { exposed, nodeMetrics as mockNodeMetrics, RED, AMBER } from '../../lib/mock';
+import { getGraphNode, getSubgraph, getExposedAccounts, type GraphNodeDTO, type SubgraphDTO, type ExposedAccountDTO } from '../../lib/api';
 import type { RiskPulse, GraphMode } from '../../state/useRiskPulse';
+
+function toExposedRows(accounts: ExposedAccountDTO[]) {
+  return accounts.slice(0, 6).map((a) => {
+    const c = a.exposure_score >= 0.5 ? RED : a.exposure_score >= 0.3 ? AMBER : 'var(--color-accent)';
+    const n = a.exposure_score >= 0.5 ? 'pre-flagged' : a.exposure_score >= 0.3 ? 'step-up' : 'monitor';
+    return { a: a.user_id, h: a.approx_hop != null ? String(a.approx_hop) : '—', v: a.exposure_score.toFixed(2), w: Math.round(a.exposure_score * 100) + '%', c, n };
+  });
+}
+
+// hop-1..4 exposure averages, live data blended into the same
+// decay-shaped visual texture the mock used (no per-hour exposure
+// telemetry is persisted, so the hour axis stays illustrative shading —
+// only the per-hop row intensity is real).
+function liveHeatCells(accounts: ExposedAccountDTO[]) {
+  const byHop = new Map<number, number[]>();
+  accounts.forEach((a) => {
+    if (a.approx_hop == null) return;
+    const arr = byHop.get(a.approx_hop) ?? [];
+    arr.push(a.exposure_score);
+    byHop.set(a.approx_hop, arr);
+  });
+  const avg = (hop: number) => {
+    const arr = byHop.get(hop);
+    return arr && arr.length ? arr.reduce((s, v) => s + v, 0) / arr.length : Math.max(0, 0.92 * Math.pow(0.52, hop));
+  };
+  const cells: { bg: string }[] = [];
+  for (let r = 1; r <= 4; r++) {
+    for (let h = 0; h < 14; h++) {
+      const v = avg(r) * (0.35 + 0.65 * (h / 13)) * (r === 1 ? 1 : 0.9);
+      cells.push({ bg: `color-mix(in srgb, ${RED} ${(v * 100).toFixed(0)}%, color-mix(in srgb, var(--color-accent) 8%, transparent))` });
+    }
+  }
+  return cells;
+}
 
 function toDisplayMetrics(m: GraphNodeDTO) {
   return [
@@ -21,6 +55,7 @@ export function GraphScreen({ rp }: { rp: RiskPulse }) {
   const [node, setNode] = useState<GraphNodeDTO | null>(null);
   const [lookedUp, setLookedUp] = useState<string | null>(null);
   const [subgraph, setSubgraph] = useState<SubgraphDTO | null>(null);
+  const [exposedAccounts, setExposedAccounts] = useState<ExposedAccountDTO[] | null>(null);
 
   const lookup = (id: string) => {
     if (!id) return;
@@ -29,9 +64,15 @@ export function GraphScreen({ rp }: { rp: RiskPulse }) {
   };
 
   useEffect(() => { lookup(rp.sel.to); }, [rp.sel.to]);
+  useEffect(() => {
+    getExposedAccounts(0.01, 50).then((r) => setExposedAccounts(r.accounts)).catch(() => setExposedAccounts(null));
+  }, []);
 
   const displayMetrics = node?.present ? toDisplayMetrics(node) : mockNodeMetrics;
   const displayId = node?.present ? (lookedUp ?? rp.sel.to) : (lookedUp ?? 'x8k2m@ybl');
+  const hasLiveExposure = !!exposedAccounts && exposedAccounts.length > 0;
+  const displayExposed = hasLiveExposure ? toExposedRows(exposedAccounts!) : exposed;
+  const displayHeat = hasLiveExposure ? liveHeatCells(exposedAccounts!) : rp.heat;
 
   return (
     <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 300px', gap: 22, alignItems: 'start' }}>
@@ -71,22 +112,23 @@ export function GraphScreen({ rp }: { rp: RiskPulse }) {
         </Blueprint>
         <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr)', gap: 22 }}>
           <Blueprint style={{ padding: 16 }}>
-            <span style={{ display: 'block', fontSize: 10.5, letterSpacing: '.1em', textTransform: 'uppercase', color: 'color-mix(in srgb,var(--color-text) 58%,transparent)', marginBottom: 12 }}>Contagion heatmap · exposure by hop × hour</span>
+            <span style={{ display: 'block', fontSize: 10.5, letterSpacing: '.1em', textTransform: 'uppercase', color: 'color-mix(in srgb,var(--color-text) 58%,transparent)', marginBottom: 12 }}>Contagion heatmap · exposure by hop × hour{hasLiveExposure ? ' · live' : ''}</span>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(14,1fr)', gap: 2 }}>
-              {rp.heat.map((c, i) => <span key={i} style={{ aspectRatio: '1', background: c.bg }} />)}
+              {displayHeat.map((c, i) => <span key={i} style={{ aspectRatio: '1', background: c.bg }} />)}
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, fontSize: 10.5, color: 'color-mix(in srgb,var(--color-text) 58%,transparent)' }}>
               <span>low</span>
               <span style={{ flex: 1, height: 6, background: 'linear-gradient(90deg,color-mix(in srgb,var(--color-accent) 8%,transparent),#b0533f)' }} />
               <span>high</span>
             </div>
+            {hasLiveExposure && <p style={{ margin: '8px 0 0', fontSize: 10.5, color: 'color-mix(in srgb,var(--color-text) 55%,transparent)' }}>Row intensity from live exposure_score per hop · hourly shading is illustrative, no per-hour telemetry is persisted.</p>}
           </Blueprint>
           <Blueprint style={{ padding: 0 }}>
-            <span style={{ display: 'block', padding: '14px 16px 10px', fontSize: 10.5, letterSpacing: '.1em', textTransform: 'uppercase', color: 'color-mix(in srgb,var(--color-text) 58%,transparent)' }}>Most exposed accounts</span>
+            <span style={{ display: 'block', padding: '14px 16px 10px', fontSize: 10.5, letterSpacing: '.1em', textTransform: 'uppercase', color: 'color-mix(in srgb,var(--color-text) 58%,transparent)' }}>Most exposed accounts{hasLiveExposure ? ' · live' : ''}</span>
             <table className="table" style={{ fontSize: 12.5 }}>
               <thead><tr><th style={{ paddingLeft: 16 }}>Account</th><th>Hops</th><th>Exposure</th><th style={{ paddingRight: 16 }}>Next txn</th></tr></thead>
               <tbody>
-                {exposed.map((e) => (
+                {displayExposed.map((e) => (
                   <tr key={e.a}>
                     <td style={{ paddingLeft: 16, fontFamily: 'ui-monospace,Menlo,monospace', fontSize: 11 }}>{e.a}</td>
                     <td style={{ fontFeatureSettings: "'tnum' 1" }}>{e.h}</td>

@@ -1,12 +1,65 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Blueprint } from '../ui/Blueprint';
-import { analystStats, linked, timeline, miniNodes, miniLinks, RED, GREEN } from '../../lib/mock';
-import { submitFeedback } from '../../lib/api';
+import { analystStats, linked, timeline, miniNodes, miniLinks, RED, AMBER, GREEN, money } from '../../lib/mock';
+import {
+  submitFeedback, getFeedbackStats, getLinkedTransactions, getFeedbackForTxn, getAudit,
+  type FeedbackStatsDTO, type LinkedTransactionDTO, type FeedbackDTO,
+} from '../../lib/api';
 import type { RiskPulse } from '../../state/useRiskPulse';
+
+type TimelineEvent = { t: string; d: string; c: string };
+
+function toAnalystStats(s: FeedbackStatsDTO) {
+  return [
+    { k: 'Reviewed', v: String(s.total_reviewed), w: '100%', c: 'var(--color-accent)' },
+    { k: 'Overrides', v: String(s.overrides), w: (s.total_reviewed ? (s.overrides / s.total_reviewed) * 100 : 0) + '%', c: AMBER },
+    { k: 'Model agreement', v: Math.round(s.agreement_rate * 100) + '%', w: Math.round(s.agreement_rate * 100) + '%', c: GREEN },
+  ];
+}
+
+function toLinkedRows(rows: LinkedTransactionDTO[]) {
+  return rows.slice(0, 6).map((r) => ({
+    id: r.txn_id, amt: money(r.amount), s: r.risk_score.toFixed(2),
+    c: r.decision === 'block' ? RED : r.decision === 'step_up' ? AMBER : GREEN,
+  }));
+}
+
+async function buildTimeline(txnId: string): Promise<TimelineEvent[]> {
+  const [audit, fb] = await Promise.all([getAudit(txnId), getFeedbackForTxn(txnId)]);
+  const events: TimelineEvent[] = [{
+    t: new Date(audit.created_at).toTimeString().slice(0, 5),
+    d: `Scored ${audit.risk_score.toFixed(2)} · ${audit.decision.replace('_', '-')}`,
+    c: audit.decision === 'block' ? RED : audit.decision === 'step_up' ? AMBER : GREEN,
+  }];
+  (fb as FeedbackDTO[]).forEach((f) => {
+    events.push({
+      t: new Date().toTimeString().slice(0, 5),
+      d: f.overridden_decision ? `Analyst override → ${f.confirmed_label}` : `Analyst confirmed ${f.confirmed_label}`,
+      c: f.confirmed_label === 'fraud' ? RED : GREEN,
+    });
+  });
+  return events;
+}
 
 export function Workbench({ rp }: { rp: RiskPulse }) {
   const [feedbackMsg, setFeedbackMsg] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [liveStats, setLiveStats] = useState<FeedbackStatsDTO | null>(null);
+  const [liveLinked, setLiveLinked] = useState<LinkedTransactionDTO[] | null>(null);
+  const [liveTimeline, setLiveTimeline] = useState<TimelineEvent[] | null>(null);
+
+  useEffect(() => {
+    getFeedbackStats().then(setLiveStats).catch(() => setLiveStats(null));
+  }, [feedbackMsg]);
+
+  useEffect(() => {
+    getLinkedTransactions(rp.sel.id).then(setLiveLinked).catch(() => setLiveLinked(null));
+    buildTimeline(rp.sel.id).then(setLiveTimeline).catch(() => setLiveTimeline(null));
+  }, [rp.sel.id]);
+
+  const displayAnalystStats = liveStats && liveStats.total_reviewed > 0 ? toAnalystStats(liveStats) : analystStats;
+  const displayLinked = liveLinked && liveLinked.length > 0 ? toLinkedRows(liveLinked) : linked;
+  const displayTimeline = liveTimeline && liveTimeline.length > 0 ? liveTimeline : timeline;
 
   const sendFeedback = async (label: 'fraud' | 'legit') => {
     setSubmitting(true);
@@ -18,6 +71,7 @@ export function Workbench({ rp }: { rp: RiskPulse }) {
           ? `Confirmed fraud on ${rp.sel.id} — contagion propagation queued.`
           : `Recorded override — approve on ${rp.sel.id}.`,
       );
+      buildTimeline(rp.sel.id).then(setLiveTimeline).catch(() => {});
     } catch {
       setFeedbackMsg('Backend unreachable — feedback not recorded.');
     } finally {
@@ -107,8 +161,8 @@ export function Workbench({ rp }: { rp: RiskPulse }) {
         </Blueprint>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 22 }}>
           <Blueprint style={{ padding: 16 }}>
-            <span style={{ display: 'block', fontSize: 10.5, letterSpacing: '.1em', textTransform: 'uppercase', color: 'color-mix(in srgb,var(--color-text) 58%,transparent)', marginBottom: 10 }}>Analyst accuracy · Priya N.</span>
-            {analystStats.map((a) => (
+            <span style={{ display: 'block', fontSize: 10.5, letterSpacing: '.1em', textTransform: 'uppercase', color: 'color-mix(in srgb,var(--color-text) 58%,transparent)', marginBottom: 10 }}>Analyst accuracy · {liveStats && liveStats.total_reviewed > 0 ? liveStats.analyst : 'Priya N.'}</span>
+            {displayAnalystStats.map((a) => (
               <div key={a.k} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '5px 0', fontSize: 12 }}>
                 <span style={{ width: 96 }}>{a.k}</span>
                 <span style={{ flex: 1, height: 7, background: 'color-mix(in srgb,var(--color-text) 10%,transparent)' }}><span style={{ display: 'block', height: 7, width: a.w, background: a.c }} /></span>
@@ -120,7 +174,7 @@ export function Workbench({ rp }: { rp: RiskPulse }) {
             <span style={{ display: 'block', fontSize: 10.5, letterSpacing: '.1em', textTransform: 'uppercase', color: 'color-mix(in srgb,var(--color-text) 58%,transparent)', marginBottom: 10 }}>Linked transactions</span>
             <table className="table" style={{ fontSize: 12 }}>
               <tbody>
-                {linked.map((l) => (
+                {displayLinked.map((l) => (
                   <tr key={l.id}><td style={{ fontFamily: 'ui-monospace,Menlo,monospace', fontSize: 11 }}>{l.id}</td><td style={{ fontFeatureSettings: "'tnum' 1" }}>{l.amt}</td><td style={{ color: l.c }}>{l.s}</td></tr>
                 ))}
               </tbody>
@@ -128,8 +182,8 @@ export function Workbench({ rp }: { rp: RiskPulse }) {
           </Blueprint>
           <Blueprint style={{ padding: 16 }}>
             <span style={{ display: 'block', fontSize: 10.5, letterSpacing: '.1em', textTransform: 'uppercase', color: 'color-mix(in srgb,var(--color-text) 58%,transparent)', marginBottom: 10 }}>Session timeline</span>
-            {timeline.map((e) => (
-              <div key={e.t} style={{ display: 'grid', gridTemplateColumns: '52px 1fr', gap: 10, padding: '4px 0', fontSize: 11.5 }}>
+            {displayTimeline.map((e, i) => (
+              <div key={i} style={{ display: 'grid', gridTemplateColumns: '52px 1fr', gap: 10, padding: '4px 0', fontSize: 11.5 }}>
                 <span style={{ fontFeatureSettings: "'tnum' 1", color: 'color-mix(in srgb,var(--color-text) 58%,transparent)' }}>{e.t}</span>
                 <span style={{ borderLeft: `2px solid ${e.c}`, paddingLeft: 9 }}>{e.d}</span>
               </div>
