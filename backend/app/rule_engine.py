@@ -103,6 +103,13 @@ def _eval(condition: dict, context: dict) -> bool:
         return False
 
 
+def eval_condition(condition: dict, context: dict[str, Any]) -> bool:
+    """Public entry point to _eval, used by the rules-preview endpoint to
+    test a draft condition tree against sampled history before it's saved
+    as a rule."""
+    return _eval(condition, context)
+
+
 def evaluate_rules(
     rules: Sequence[RuleLike], context: dict[str, Any],
 ) -> tuple[list[RuleFireResult], float, RuleFireResult | None]:

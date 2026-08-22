@@ -51,6 +51,17 @@ export function useRiskPulse() {
   const [wsConnected, setWsConnected] = useState(false);
   const wsConnectedRef = useRef(false);
   const seenTxnIds = useRef<Set<string>>(new Set());
+  // ---- checklist 4.3: feed filters (channel / decision / min score) ----
+  const [filterChannel, setFilterChannel] = useState<'all' | string>('all');
+  const [filterDecision, setFilterDecision] = useState<'all' | 'Approve' | 'Step-up' | 'Block'>('all');
+  const [filterMinScore, setFilterMinScore] = useState(0);
+  // ---- checklist 4.1: toast notifications for high-risk (block) alerts ----
+  const [toasts, setToasts] = useState<{ id: string; msg: string; c: string }[]>([]);
+  const pushToast = useCallback((id: string, msg: string, c: string) => {
+    setToasts((prev) => [...prev, { id, msg, c }].slice(-4));
+    window.setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 6000);
+  }, []);
+  const dismissToast = useCallback((id: string) => setToasts((prev) => prev.filter((t) => t.id !== id)), []);
 
   // ---- seed thresholds from the server once on mount, so a fresh
   // session shows whatever an admin last persisted via POST
@@ -115,11 +126,14 @@ export function useRiskPulse() {
           seenTxnIds.current.add(msg.txn_id);
           const time = new Date().toTimeString().slice(0, 8);
           const flagLine = msg.reason_code && msg.reason_code !== 'none' ? String(msg.reason_code).replace(/_/g, ' ') : '—';
-          const row: RawTxn = [msg.txn_id, time, msg.sender_id, msg.receiver_id, msg.amount, msg.risk_score, msg.puppet_score, flagLine];
+          const row: RawTxn = [msg.txn_id, time, msg.sender_id, msg.receiver_id, msg.amount, msg.risk_score, msg.puppet_score, flagLine, msg.channel ?? 'UPI'];
           if (msg.shap_values) {
             setShapMap((prev) => ({ ...prev, [msg.txn_id]: Object.entries(msg.shap_values) as [string, number][] }));
           }
           setFeed((prev) => [row, ...prev].slice(0, 14));
+          if (msg.decision === 'block') {
+            pushToast(msg.txn_id, `${msg.txn_id} blocked · risk ${Number(msg.risk_score).toFixed(2)} · ${msg.sender_id} → ${msg.receiver_id}`, RED);
+          }
         } catch {
           // malformed frame — ignore, the feed just misses this update
         }
@@ -166,8 +180,11 @@ export function useRiskPulse() {
               : resp.risk_score > 0.55 && topReason
                 ? topReason.feature.replace(/_/g, ' ')
                 : '—';
-            const row: RawTxn = [resp.txn_id, time, from, to, amount, resp.risk_score, resp.puppet_score, flagLine];
+            const row: RawTxn = [resp.txn_id, time, from, to, amount, resp.risk_score, resp.puppet_score, flagLine, channel];
             setFeed((prev) => [row, ...prev].slice(0, 14));
+            if (resp.decision === 'block') {
+              pushToast(resp.txn_id, `${resp.txn_id} blocked · risk ${resp.risk_score.toFixed(2)} · ${from} → ${to}`, RED);
+            }
           }
         })
         .catch(() => {
@@ -209,7 +226,7 @@ export function useRiskPulse() {
   const setPreset = useCallback((a: number, b: number) => { setApprRaw(a); setBlkRaw(b); }, []);
 
   // ---- derived: feed rows + selection ----
-  const feedRows = useMemo(() => {
+  const allFeedRows = useMemo(() => {
     return feed.map((r) => {
       const [dec, color] = decide(r[5], appr, blk);
       return {
@@ -217,13 +234,24 @@ export function useRiskPulse() {
         n: '', id: r[0], time: r[1], from: r[2], to: r[3],
         amt: money(r[4]), score: r[5].toFixed(2), pct: (r[5] * 100).toFixed(0) + '%',
         puppet: r[6].toFixed(2), puppetColor: r[6] > 0.7 ? RED : r[6] > 0.4 ? AMBER : 'inherit',
-        flagLine: r[7], dec, color, tint: tint(color),
+        flagLine: r[7], channel: r[8], dec, color, tint: tint(color),
         selected: r[0] === (selId ?? feed[0]?.[0]),
       };
     }).map((row, i) => ({ ...row, n: String(i + 1).padStart(2, '0') }));
   }, [feed, appr, blk, selId]);
 
-  const selectedRow = feedRows.find((r) => r.selected) ?? feedRows[0];
+  const availableChannels = useMemo(
+    () => Array.from(new Set(feed.map((r) => r[8]))).sort(),
+    [feed],
+  );
+
+  const feedRows = useMemo(() => allFeedRows.filter((row) =>
+    (filterChannel === 'all' || row.channel === filterChannel) &&
+    (filterDecision === 'all' || row.dec === filterDecision) &&
+    row.raw[5] >= filterMinScore,
+  ), [allFeedRows, filterChannel, filterDecision, filterMinScore]);
+
+  const selectedRow = allFeedRows.find((r) => r.selected) ?? allFeedRows[0];
   const pickTxn = useCallback((id: string) => setSelId(id), []);
 
   const sel = useMemo(() => {
@@ -233,9 +261,27 @@ export function useRiskPulse() {
       id: r[0], score: r[5].toFixed(2), dec: selDec, color: selColor, tint: tint(selColor),
       band: r[5] >= blk ? 'above block threshold' : r[5] >= appr ? 'in step-up band' : 'below approve threshold',
       dash: `${(r[5] * 194.8).toFixed(1)} 400`, ringDash: `${(r[5] * 301.6).toFixed(1)} 400`,
-      amt: money(r[4]), to: r[3], flags: r[7] === '—' ? ['no graph flags'] : r[7].split(' · '),
+      amt: money(r[4]), to: r[3], from: r[2], channel: r[8], puppet: r[6].toFixed(2),
+      flags: r[7] === '—' ? ['no graph flags'] : r[7].split(' · '),
     };
   }, [selectedRow, appr, blk]);
+
+  const [copyMsg, setCopyMsg] = useState<string | null>(null);
+  const copySelJson = useCallback(() => {
+    const realShap = shapMap[sel.id];
+    const payload = {
+      request: { sender_id: sel.from, receiver_id: sel.to, amount: sel.amt, channel: sel.channel },
+      response: {
+        txn_id: sel.id, risk_score: Number(sel.score), puppet_score: Number(sel.puppet),
+        decision: sel.dec, graph_flags: sel.flags,
+        shap_values: realShap ? Object.fromEntries(realShap) : undefined,
+      },
+    };
+    navigator.clipboard.writeText(JSON.stringify(payload, null, 2))
+      .then(() => setCopyMsg('Copied'))
+      .catch(() => setCopyMsg('Copy failed'));
+    window.setTimeout(() => setCopyMsg(null), 2000);
+  }, [sel, shapMap]);
 
   const split = useMemo(() => {
     const counts = [0, 0, 0];
@@ -437,6 +483,13 @@ export function useRiskPulse() {
     themeGlyph: theme === 'dark' ? '☀' : '☾',
     // feed / selection
     feed: feedRows, pickTxn, sel, split, hist, shap,
+    // feed filters (4.3)
+    filterChannel, setFilterChannel, filterDecision, setFilterDecision, filterMinScore, setFilterMinScore,
+    availableChannels, feedTotal: allFeedRows.length,
+    // toasts (4.1)
+    toasts, dismissToast,
+    // copy request/response JSON (4.2)
+    copySelJson, copyMsg,
     // dashboard
     kpis, gridLines, volLine, volArea, flagLine, miniCharts, shapBase: '0.031',
     navItems, screenTitle, screenNote, liveLabel, liveCta, wsConnected,

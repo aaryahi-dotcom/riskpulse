@@ -218,6 +218,7 @@ def score_transaction(
                     "sender_id": payload.sender_id,
                     "receiver_id": payload.receiver_id,
                     "amount": payload.amount,
+                    "channel": payload.channel,
                     "timestamp": payload.timestamp.isoformat(),
                     "risk_score": response.risk_score,
                     "decision": response.decision,

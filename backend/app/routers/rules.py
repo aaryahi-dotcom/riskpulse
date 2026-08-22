@@ -35,8 +35,8 @@ from sqlalchemy.orm import Session
 
 from ..db import get_db
 from ..models_db import Feedback, Rule, ScoredTransaction
-from ..rule_engine import validate_condition
-from ..schemas import RuleCreate, RuleOut, RuleStatsOut, RuleUpdate
+from ..rule_engine import eval_condition, validate_condition
+from ..schemas import RuleCreate, RuleOut, RulePreviewIn, RulePreviewOut, RuleStatsOut, RuleUpdate
 from ..security import get_current_subject
 
 router = APIRouter(prefix="/api/v1/rules", tags=["rules"])
@@ -114,6 +114,54 @@ def create_rule(
     db.commit()
     db.refresh(rule)
     return rule
+
+
+@router.post("/preview", response_model=RulePreviewOut)
+def preview_rule(
+    payload: RulePreviewIn,
+    db: Session = Depends(get_db),
+    subject: str = Depends(get_current_subject),
+) -> dict:
+    """checklist 4.8: "preview how many past txns a rule would catch" —
+    tests a draft condition tree (not yet saved as a Rule row) against the
+    most recent `n` scored transactions, using whatever fields are
+    persisted on ScoredTransaction. Fields the draft references that
+    aren't in that context (e.g. beneficiary_age, vpa_entropy) simply
+    never match, per rule_engine's documented missing-field behavior —
+    so the preview undercounts rather than errors for such rules, and the
+    UI should read it as a lower bound, not an exact match count."""
+    try:
+        validate_condition(payload.condition_json)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+
+    rows = (
+        db.query(ScoredTransaction)
+        .order_by(desc(ScoredTransaction.created_at))
+        .limit(payload.n)
+        .all()
+    )
+    matched = 0
+    for r in rows:
+        context = {
+            "amount": r.amount,
+            "channel": r.channel,
+            "sender_id": r.sender_id,
+            "receiver_id": r.receiver_id,
+            "vpa": r.vpa,
+            "puppet_score": r.puppet_score,
+            "risk_score": r.risk_score,
+            "decision": r.decision,
+        }
+        if eval_condition(payload.condition_json, context):
+            matched += 1
+
+    sampled = len(rows)
+    return {
+        "sampled": sampled,
+        "matched": matched,
+        "match_rate": (matched / sampled) if sampled else 0.0,
+    }
 
 
 @router.get("", response_model=list[RuleOut])

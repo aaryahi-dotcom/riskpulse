@@ -6,9 +6,23 @@ export function LayoutA({ rp }: { rp: RiskPulse }) {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 22 }}>
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 300px', gap: 22 }}>
         <Blueprint style={{ padding: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 16px', borderBottom: '1px solid var(--color-divider)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 16px', borderBottom: '1px solid var(--color-divider)', flexWrap: 'wrap' }}>
             <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 600, fontSize: 13, letterSpacing: '.1em', textTransform: 'uppercase' }}>Live transaction feed</span>
-            <span style={{ marginLeft: 'auto', fontSize: 11, color: 'color-mix(in srgb,var(--color-text) 55%,transparent)' }}>WS /ws/transactions · click a row to explain</span>
+            <select className="input" style={{ fontSize: 11, padding: '3px 6px', width: 'auto' }} value={rp.filterChannel} onChange={(e) => rp.setFilterChannel(e.target.value)}>
+              <option value="all">All channels</option>
+              {rp.availableChannels.map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
+            <select className="input" style={{ fontSize: 11, padding: '3px 6px', width: 'auto' }} value={rp.filterDecision} onChange={(e) => rp.setFilterDecision(e.target.value as typeof rp.filterDecision)}>
+              <option value="all">All decisions</option>
+              <option value="Approve">Approve</option>
+              <option value="Step-up">Step-up</option>
+              <option value="Block">Block</option>
+            </select>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'color-mix(in srgb,var(--color-text) 60%,transparent)' }}>
+              Min score {rp.filterMinScore.toFixed(2)}
+              <input type="range" min="0" max="1" step="0.05" value={rp.filterMinScore} onChange={(e) => rp.setFilterMinScore(parseFloat(e.target.value))} style={{ width: 70 }} />
+            </label>
+            <span style={{ marginLeft: 'auto', fontSize: 11, color: 'color-mix(in srgb,var(--color-text) 55%,transparent)' }}>WS /ws/transactions · {rp.feed.length}/{rp.feedTotal} shown · click a row to explain</span>
           </div>
           <div className="rp-scroll" style={{ maxHeight: 404, overflow: 'auto' }}>
             <table className="table" style={{ fontSize: 13 }}>
@@ -47,6 +61,9 @@ export function LayoutA({ rp }: { rp: RiskPulse }) {
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'center', marginTop: 12 }}>
               {rp.sel.flags.map((f) => <span key={f} className="tag tag-outline" style={{ fontSize: 10 }}>{f}</span>)}
             </div>
+            <button type="button" className="btn btn-ghost" style={{ marginTop: 12, fontSize: 11 }} onClick={rp.copySelJson}>
+              {rp.copyMsg ?? 'Copy request/response JSON'}
+            </button>
           </Blueprint>
           <Blueprint style={{ padding: 18 }}>
             <span style={{ display: 'block', fontSize: 11, letterSpacing: '.1em', textTransform: 'uppercase', color: 'color-mix(in srgb,var(--color-text) 58%,transparent)', marginBottom: 14 }}>Decision split · 24h</span>

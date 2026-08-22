@@ -27,6 +27,14 @@ export function Console({ rp }: { rp: RiskPulse }) {
           {rp.screen === 'simulator' && <Simulator rp={rp} />}
         </div>
       </main>
+      <div style={{ position: 'fixed', top: 18, right: 18, display: 'flex', flexDirection: 'column', gap: 8, zIndex: 100, width: 300 }}>
+        {rp.toasts.map((t) => (
+          <div key={t.id} onClick={() => rp.dismissToast(t.id)} style={{ cursor: 'pointer', padding: '10px 14px', background: 'var(--color-surface)', border: `1px solid ${t.c}`, borderLeft: `4px solid ${t.c}`, boxShadow: '0 4px 14px rgba(0,0,0,.18)', fontSize: 12, lineHeight: 1.5 }}>
+            <span style={{ display: 'block', fontFamily: 'var(--font-heading)', fontWeight: 600, fontSize: 10.5, letterSpacing: '.08em', textTransform: 'uppercase', color: t.c, marginBottom: 3 }}>High-risk alert</span>
+            {t.msg}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

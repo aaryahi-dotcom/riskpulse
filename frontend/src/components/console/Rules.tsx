@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Blueprint } from '../ui/Blueprint';
 import { rules as mockRules, builderRows, RED, AMBER, GREEN, tint } from '../../lib/mock';
-import { listRules, getRuleStats, createRule, type RuleDTO } from '../../lib/api';
+import { listRules, getRuleStats, createRule, previewRule, type RuleDTO, type RulePreviewDTO } from '../../lib/api';
 
 type DisplayRule = typeof mockRules[number];
 
@@ -65,6 +65,9 @@ export function Rules() {
   );
   const [thenAction, setThenAction] = useState<ThenAction>('review');
   const [scoreAdj, setScoreAdj] = useState('0.30');
+  const [preview, setPreview] = useState<RulePreviewDTO | null>(null);
+  const [previewing, setPreviewing] = useState(false);
+  const [previewMsg, setPreviewMsg] = useState<string | null>(null);
 
   const refresh = () => {
     loadLiveRules().then(setLiveRules).catch(() => setLiveRules(null));
@@ -73,9 +76,25 @@ export function Rules() {
 
   const displayRules = liveRules ?? mockRules;
 
-  const setRow = (i: number, patch: Partial<BuilderRow>) =>
+  const setRow = (i: number, patch: Partial<BuilderRow>) => {
     setRows((prev) => prev.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
-  const addRow = () => setRows((prev) => [...prev, { field: 'amount', op: '>', value: '0' }]);
+    setPreview(null);
+  };
+  const addRow = () => { setRows((prev) => [...prev, { field: 'amount', op: '>', value: '0' }]); setPreview(null); };
+
+  const runPreview = async () => {
+    setPreviewing(true);
+    setPreviewMsg(null);
+    try {
+      const result = await previewRule(buildConditionJson(rows));
+      setPreview(result);
+    } catch {
+      setPreview(null);
+      setPreviewMsg('Backend unreachable — preview unavailable.');
+    } finally {
+      setPreviewing(false);
+    }
+  };
 
   const deployRule = async () => {
     setDeploying(true);
@@ -91,6 +110,7 @@ export function Rules() {
         priority: 50,
       });
       setDeployMsg('Rule deployed — live immediately.');
+      setPreview(null);
       refresh();
     } catch {
       setDeployMsg('Backend unreachable — rule not deployed.');
@@ -166,6 +186,16 @@ export function Rules() {
               IF {rows.map((r) => `${r.field} ${r.op} ${r.value}`).join(' AND ')} THEN {thenAction === 'augment' ? `score += ${scoreAdj}` : thenAction === 'block' ? 'block' : 'force review'}
             </code>
           </div>
+          <button type="button" className="btn btn-secondary btn-block" style={{ padding: 10 }} disabled={previewing} onClick={runPreview}>
+            {previewing ? 'Testing against history…' : 'Preview — how many past txns would this catch?'}
+          </button>
+          {preview && (
+            <div style={{ padding: 10, border: '1px solid var(--color-divider)', background: 'var(--color-surface)', fontSize: 12 }}>
+              <span style={{ fontFamily: 'var(--font-heading)', fontSize: 16 }}>{preview.matched}</span> of {preview.sampled} sampled transactions match ({Math.round(preview.match_rate * 100)}%).
+              {!preview.sampled && <span style={{ display: 'block', marginTop: 4, color: 'color-mix(in srgb,var(--color-text) 55%,transparent)' }}>No scored history yet — score a few transactions first.</span>}
+            </div>
+          )}
+          {previewMsg && <span style={{ fontSize: 11.5, color: RED }}>{previewMsg}</span>}
           <button type="button" className="btn btn-primary btn-block" style={{ padding: 11 }} disabled={deploying} onClick={deployRule}>
             {deploying ? 'Deploying…' : 'Deploy rule — takes effect immediately'}
           </button>

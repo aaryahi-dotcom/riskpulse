@@ -181,6 +181,19 @@ class RuleStatsOut(BaseModel):
     precision_estimate: float | None
 
 
+class RulePreviewIn(BaseModel):
+    condition_json: dict[str, Any] = Field(
+        ..., description="Draft IF/AND/THEN tree to test against recent history, before saving."
+    )
+    n: int = Field(default=500, description="How many recent scored transactions to sample.")
+
+
+class RulePreviewOut(BaseModel):
+    sampled: int
+    matched: int
+    match_rate: float
+
+
 # ---------------------------------------------------------------------
 # checklist 2.6 — feedback loop + retraining
 # ---------------------------------------------------------------------

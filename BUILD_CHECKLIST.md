@@ -238,10 +238,10 @@
 ### 4.1 Real-time core
 *Owners: Nihanshi + Bhoomi*
 - [x] Overview dashboard with live pipeline status + counters (scored / blocked / avg)
-- [~] "Start live traffic" simulator → wire to real feed
-- [ ] `WS /ws/transactions` WebSocket feed (replace Axios 2s polling)
-- [ ] Notification toasts for high-risk alerts
-- [ ] Connection status + auto-reconnect
+- [x] "Start live traffic" simulator → wire to real feed
+- [x] `WS /ws/transactions` WebSocket feed (replace Axios 2s polling)
+- [x] Notification toasts for high-risk alerts
+- [x] Connection status + auto-reconnect
 
 ### 4.2 Score & Decide panel
 *Owners: Nihanshi*
@@ -249,15 +249,15 @@
 - [x] Live preview slider
 - [x] Result card with approve/step-up/block bar
 - [ ] Full reason codes + which subsystem fired
-- [ ] Risk gauge (Chart.js doughnut)
-- [ ] Copy request/response as JSON (judge-friendly)
+- [x] Risk gauge (doughnut, SVG)
+- [x] Copy request/response as JSON (judge-friendly)
 
 ### 4.3 Live transaction feed
 *Owners: Nihanshi*
 - [x] Feed table (time / sender / receiver / amount / channel / score / decision)
-- [ ] Color-coded rows (green/yellow/red)
-- [ ] Row click → full explanation drill-down
-- [ ] Filters (channel, decision, score range)
+- [x] Color-coded rows (green/yellow/red)
+- [x] Row click → full explanation drill-down
+- [x] Filters (channel, decision, score range)
 
 ### 4.4 Explainability visuals
 *Owners: Nihanshi + Bhoomi*
@@ -267,46 +267,46 @@
 
 ### 4.5 Transaction graph viz ("wow" visual)
 *Owners: Nihanshi + Paridhi*
-- [ ] **React Force Graph / D3** force-directed network
-- [ ] Nodes colored by risk (green/yellow/red)
-- [ ] Click node → details + recent txns + metrics
+- [x] **React Force Graph / D3** force-directed network (d3-force)
+- [x] Nodes colored by risk (green/yellow/red)
+- [x] Click node → details + recent txns + metrics
 - [ ] Highlight detected cycles / mule clusters
 - [ ] Pre-approval sim animation (new edge → re-decide)
 
 ### 4.6 Analyst Workbench (Section 6.1)
 *Owners: Nihanshi + Arya + Bhoomi*
-- [ ] Flagged-txn list, expandable cards
-- [ ] Card: details + risk gauge + SHAP waterfall + graph neighborhood mini-view
-- [ ] Buttons: "Confirm Fraud" / "Override–Approve" + reason dropdown → `POST /feedback`
-- [ ] Override tracking (analyst accuracy: "11 correct, 1 actual fraud")
-- [ ] Case linking (grouped related txns)
+- [x] Flagged-txn list, expandable cards
+- [x] Card: details + risk gauge + SHAP waterfall + graph neighborhood mini-view
+- [x] Buttons: "Confirm Fraud" / "Override–Approve" + reason dropdown → `POST /feedback`
+- [x] Override tracking (analyst accuracy, live from `/api/v1/feedback/stats`)
+- [x] Case linking (grouped related txns, live from `/api/v1/score/linked/{txn_id}`)
 
 ### 4.7 Threshold Control Panel (Section 6.2)
 *Owners: Nihanshi + Paridhi*
 - [x] Sliders exist on overview
-- [ ] Dedicated admin panel with **live preview chart** (pie: approve/step-up/block at proposed thresholds)
-- [ ] Seasonal presets: "Festival mode" widens approve band, "High alert" tightens
-- [ ] Persist to server + guardrail (block can't be < approve)
+- [x] Dedicated admin panel with **live preview chart** (pie: approve/step-up/block at proposed thresholds)
+- [x] Seasonal presets: "Festival mode" widens approve band, "High alert" tightens
+- [x] Persist to server + guardrail (block can't be < approve)
 
 ### 4.8 Custom Rule Builder UI (Section 6.3)
 *Owners: Paridhi + Bhoomi*
-- [ ] Form with dropdowns: field / operator / value / action
+- [x] Form with dropdowns: field / operator / value / action
 - [ ] Enable-disable + priority ordering
-- [ ] Preview how many past txns a rule would catch
-- [ ] Push live (no redeploy)
+- [x] Preview how many past txns a rule would catch (`POST /api/v1/rules/preview`)
+- [x] Push live (no redeploy)
 
 ### 4.9 Fraud Contagion Heatmap (Section 5.4 viz)
 *Owners: Nihanshi*
-- [ ] Graph nodes colored by exposure score, hop-distance shading (1→3)
+- [x] Graph nodes colored by exposure score, hop-distance shading (1→3, live from `/api/v1/graph/exposed`)
 - [ ] "Watch fraud spread" animation on confirm-fraud
 - [ ] Toggle contagion overlay on the graph
 
 ### 4.10 Model Health Monitor page (Section 6.6)
 *Owners: Nihanshi + Bhoomi*
-- [ ] Chart.js line graphs: F1 / precision / recall / FPR over 7/30/90d
-- [ ] Drift indicator
-- [ ] System panel: latency p50/p95/p99, volume, alert count
-- [ ] Model version history + comparison
+- [ ] Line graphs: F1 / precision / recall / FPR over 7/30/90d (chart is still mock; KPIs above it are live)
+- [x] Drift indicator
+- [x] System panel: latency p50/p95/p99, volume, alert count
+- [x] Model version history + comparison
 
 ### 4.11 Existing analytics (keep + polish)
 *Owners: Bhoomi + Paridhi*
@@ -315,11 +315,11 @@
 - [ ] Loading + empty + error states everywhere
 - [ ] Responsive / laptop-projector-safe layout
 
-### 4.12 Demo tooling — `POST /api/v1/simulate/{scenario}`
+### 4.12 Demo tooling
 *Owners: Kaysha + Arya*
-- [x] Scenarios: normal_traffic · digital_arrest · mule_ring
-- [ ] Add **smurfing** (many small amounts under reporting threshold)
-- [ ] "Run scenario" dropdown → plays out live
+- [x] Scenarios: normal_traffic · digital_arrest · mule_ring — injected as real payloads into `POST /api/v1/score` (no separate `/simulate` endpoint exists or is needed)
+- [x] Add **smurfing** (many small amounts under reporting threshold)
+- [x] "Run scenario" → plays out live against the real scoring pipeline
 - [ ] One-click reset / guided demo mode
 - [ ] Keep the honesty modal updated per phase
 

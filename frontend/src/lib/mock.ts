@@ -17,23 +17,24 @@ export type RawTxn = [
   score: number,
   puppet: number,
   flagLine: string,
+  channel: string,
 ];
 
 export const RAW_SEED: RawTxn[] = [
-  ['TXN-88412', '14:22:07', 'arya@okhdfc', 'x8k2m@ybl', 248000, 0.91, 0.83, 'cycle 2-hop · mule cluster'],
-  ['TXN-88411', '14:21:58', 'n.desai@ybl', 'q4t7z@paytm', 199500, 0.86, 0.79, 'new benef burst'],
-  ['TXN-88409', '14:21:40', 'kaysha@oksbi', 'r.mehta@ybl', 12400, 0.22, 0.11, '—'],
-  ['TXN-88407', '14:21:12', 'bhoomi@apl', 'vend.kirana@sbi', 860, 0.08, 0.04, '—'],
-  ['TXN-88404', '14:20:51', 'arya@okhdfc', 'x8k2m@ybl', 248000, 0.78, 0.81, 'repeat round amt'],
-  ['TXN-88402', '14:20:33', 'p.rao@okaxis', 'm9v2k@ybl', 97000, 0.64, 0.42, 'centrality spike'],
-  ['TXN-88399', '14:20:02', 's.iyer@ibl', 'fuel.hp@okhdfc', 3100, 0.14, 0.06, '—'],
-  ['TXN-88396', '14:19:44', 'nihanshi@ybl', 'w2p8n@paytm', 49999, 0.71, 0.66, 'below-threshold split'],
-  ['TXN-88393', '14:19:20', 'd.imrie@oksbi', 'rent.jain@ybl', 28000, 0.19, 0.09, '—'],
-  ['TXN-88390', '14:18:57', 'aaryahi@apl', 'z6h1c@ybl', 150000, 0.83, 0.74, 'exposure 0.61'],
-  ['TXN-88387', '14:18:31', 't.menon@okicici', 'grocer.day@ybl', 2240, 0.06, 0.03, '—'],
-  ['TXN-88384', '14:18:04', 'paridhi@ybl', 'k3n9x@paytm', 75000, 0.58, 0.51, 'channel switch'],
-  ['TXN-88381', '14:17:39', 'v.shah@oksbi', 'sal.acct@okhdfc', 64000, 0.11, 0.05, '—'],
-  ['TXN-88377', '14:17:11', 'r.kaur@apl', 'y7b4d@ybl', 120000, 0.75, 0.69, '3am pattern'],
+  ['TXN-88412', '14:22:07', 'arya@okhdfc', 'x8k2m@ybl', 248000, 0.91, 0.83, 'cycle 2-hop · mule cluster', 'UPI'],
+  ['TXN-88411', '14:21:58', 'n.desai@ybl', 'q4t7z@paytm', 199500, 0.86, 0.79, 'new benef burst', 'IMPS'],
+  ['TXN-88409', '14:21:40', 'kaysha@oksbi', 'r.mehta@ybl', 12400, 0.22, 0.11, '—', 'UPI'],
+  ['TXN-88407', '14:21:12', 'bhoomi@apl', 'vend.kirana@sbi', 860, 0.08, 0.04, '—', 'UPI'],
+  ['TXN-88404', '14:20:51', 'arya@okhdfc', 'x8k2m@ybl', 248000, 0.78, 0.81, 'repeat round amt', 'UPI'],
+  ['TXN-88402', '14:20:33', 'p.rao@okaxis', 'm9v2k@ybl', 97000, 0.64, 0.42, 'centrality spike', 'NEFT'],
+  ['TXN-88399', '14:20:02', 's.iyer@ibl', 'fuel.hp@okhdfc', 3100, 0.14, 0.06, '—', 'UPI'],
+  ['TXN-88396', '14:19:44', 'nihanshi@ybl', 'w2p8n@paytm', 49999, 0.71, 0.66, 'below-threshold split', 'UPI'],
+  ['TXN-88393', '14:19:20', 'd.imrie@oksbi', 'rent.jain@ybl', 28000, 0.19, 0.09, '—', 'IMPS'],
+  ['TXN-88390', '14:18:57', 'aaryahi@apl', 'z6h1c@ybl', 150000, 0.83, 0.74, 'exposure 0.61', 'UPI'],
+  ['TXN-88387', '14:18:31', 't.menon@okicici', 'grocer.day@ybl', 2240, 0.06, 0.03, '—', 'UPI'],
+  ['TXN-88384', '14:18:04', 'paridhi@ybl', 'k3n9x@paytm', 75000, 0.58, 0.51, 'channel switch', 'NEFT'],
+  ['TXN-88381', '14:17:39', 'v.shah@oksbi', 'sal.acct@okhdfc', 64000, 0.11, 0.05, '—', 'UPI'],
+  ['TXN-88377', '14:17:11', 'r.kaur@apl', 'y7b4d@ybl', 120000, 0.75, 0.69, '3am pattern', 'IMPS'],
 ];
 
 export const SHAP: [string, number][] = [
@@ -386,5 +387,6 @@ export function genTxn(): RawTxn {
   const score = +(risky ? 0.5 + Math.random() * 0.45 : Math.random() * 0.48).toFixed(2);
   const puppet = +Math.max(0, score - 0.12 + (Math.random() * 0.2 - 0.1)).toFixed(2);
   const flagLine = score > 0.55 ? pick(RISK_FLAGS) : '—';
-  return [id, time, from, to, amount, score, puppet, flagLine];
+  const channel = genChannel();
+  return [id, time, from, to, amount, score, puppet, flagLine, channel];
 }

@@ -225,6 +225,19 @@ export function createRule(payload: RuleCreatePayload): Promise<RuleDTO> {
   return authedJson<RuleDTO>('/api/v1/rules', { method: 'POST', body: JSON.stringify(payload) });
 }
 
+export interface RulePreviewDTO {
+  sampled: number;
+  matched: number;
+  match_rate: number;
+}
+
+export function previewRule(conditionJson: Record<string, unknown>, n = 500): Promise<RulePreviewDTO> {
+  return authedJson<RulePreviewDTO>('/api/v1/rules/preview', {
+    method: 'POST',
+    body: JSON.stringify({ condition_json: conditionJson, n }),
+  });
+}
+
 export interface AlertCaseDTO {
   case_id: string;
   group_type: string;
