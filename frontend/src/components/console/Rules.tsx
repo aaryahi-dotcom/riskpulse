@@ -39,10 +39,32 @@ async function loadLiveRules(): Promise<DisplayRule[]> {
   return withStats;
 }
 
+const OPS = ['==', '!=', '>', '>=', '<', '<=', 'in', 'not in'];
+
+type BuilderRow = { field: string; op: string; value: string };
+type ThenAction = 'augment' | 'review' | 'block';
+
+function parseValue(raw: string): string | number {
+  const n = Number(raw);
+  return raw.trim() !== '' && !Number.isNaN(n) ? n : raw;
+}
+
+function buildConditionJson(rows: BuilderRow[]): Record<string, unknown> {
+  const leaves = rows.map((r) => ({ field: r.field, op: r.op, value: parseValue(r.value) }));
+  return leaves.length === 1 ? leaves[0] : { all: leaves };
+}
+
 export function Rules() {
   const [liveRules, setLiveRules] = useState<DisplayRule[] | null>(null);
   const [deploying, setDeploying] = useState(false);
   const [deployMsg, setDeployMsg] = useState<string | null>(null);
+
+  const [ruleName, setRuleName] = useState('Night-time large transfer to new VPA');
+  const [rows, setRows] = useState<BuilderRow[]>(
+    builderRows.map((b) => ({ field: b.fields[0], op: b.op, value: b.val })),
+  );
+  const [thenAction, setThenAction] = useState<ThenAction>('review');
+  const [scoreAdj, setScoreAdj] = useState('0.30');
 
   const refresh = () => {
     loadLiveRules().then(setLiveRules).catch(() => setLiveRules(null));
@@ -51,15 +73,21 @@ export function Rules() {
 
   const displayRules = liveRules ?? mockRules;
 
+  const setRow = (i: number, patch: Partial<BuilderRow>) =>
+    setRows((prev) => prev.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
+  const addRow = () => setRows((prev) => [...prev, { field: 'amount', op: '>', value: '0' }]);
+
   const deployRule = async () => {
     setDeploying(true);
     setDeployMsg(null);
     try {
+      const delta = parseFloat(scoreAdj) || 0;
       await createRule({
-        name: 'Night-time large transfer to new VPA',
-        condition_json: { field: 'amount', op: '>', value: 200000 },
-        action: 'augment',
-        score_delta: 0.3,
+        name: ruleName,
+        condition_json: buildConditionJson(rows),
+        action: thenAction === 'augment' ? 'augment' : 'override',
+        score_delta: thenAction === 'augment' ? delta : null,
+        forced_tier: thenAction === 'block' ? 'block' : thenAction === 'review' ? 'step_up' : null,
         priority: 50,
       });
       setDeployMsg('Rule deployed — live immediately.');
@@ -101,32 +129,42 @@ export function Rules() {
         <span style={{ display: 'block', fontSize: 10.5, letterSpacing: '.1em', textTransform: 'uppercase', color: 'color-mix(in srgb,var(--color-text) 58%,transparent)' }}>New rule</span>
         <hr style={{ height: 1, border: 0, background: 'var(--color-divider)', margin: '12px 0 16px' }} />
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <div className="field"><label>Rule name</label><input className="input" defaultValue="Night-time large transfer to new VPA" /></div>
+          <div className="field"><label>Rule name</label><input className="input" value={ruleName} onChange={(e) => setRuleName(e.target.value)} /></div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             <span style={{ fontSize: 11, letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--color-accent-700)' }}>IF</span>
-            {builderRows.map((b, i) => (
-              <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 62px 84px', gap: 8 }}>
-                <select className="input" style={{ fontSize: 12.5 }}>
-                  {b.fields.map((f) => <option key={f}>{f}</option>)}
-                </select>
-                <select className="input" style={{ fontSize: 12.5 }}><option>{b.op}</option></select>
-                <input className="input" style={{ fontSize: 12.5 }} defaultValue={b.val} />
-              </div>
-            ))}
-            <button type="button" className="btn btn-ghost" style={{ alignSelf: 'flex-start', fontSize: 12.5 }}>+ Add condition</button>
+            {rows.map((r, i) => {
+              const fields = builderRows[i % builderRows.length].fields;
+              const fieldOptions = fields.includes(r.field) ? fields : [r.field, ...fields];
+              return (
+                <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 62px 84px', gap: 8 }}>
+                  <select className="input" style={{ fontSize: 12.5 }} value={r.field} onChange={(e) => setRow(i, { field: e.target.value })}>
+                    {fieldOptions.map((f) => <option key={f}>{f}</option>)}
+                  </select>
+                  <select className="input" style={{ fontSize: 12.5 }} value={r.op} onChange={(e) => setRow(i, { op: e.target.value })}>
+                    {OPS.map((op) => <option key={op}>{op}</option>)}
+                  </select>
+                  <input className="input" style={{ fontSize: 12.5 }} value={r.value} onChange={(e) => setRow(i, { value: e.target.value })} />
+                </div>
+              );
+            })}
+            <button type="button" className="btn btn-ghost" style={{ alignSelf: 'flex-start', fontSize: 12.5 }} onClick={addRow}>+ Add condition</button>
           </div>
           <div>
             <span style={{ display: 'block', fontSize: 11, letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--color-accent-700)', marginBottom: 8 }}>THEN</span>
             <div className="seg" style={{ width: '100%' }}>
-              <label className="seg-opt" style={{ flex: 1, justifyContent: 'center', fontSize: 12 }}><input type="radio" name="act" />Add to score</label>
-              <label className="seg-opt" style={{ flex: 1, justifyContent: 'center', fontSize: 12 }}><input type="radio" name="act" defaultChecked />Force review</label>
-              <label className="seg-opt" style={{ flex: 1, justifyContent: 'center', fontSize: 12 }}><input type="radio" name="act" />Block</label>
+              <label className="seg-opt" style={{ flex: 1, justifyContent: 'center', fontSize: 12 }}><input type="radio" name="act" checked={thenAction === 'augment'} onChange={() => setThenAction('augment')} />Add to score</label>
+              <label className="seg-opt" style={{ flex: 1, justifyContent: 'center', fontSize: 12 }}><input type="radio" name="act" checked={thenAction === 'review'} onChange={() => setThenAction('review')} />Force review</label>
+              <label className="seg-opt" style={{ flex: 1, justifyContent: 'center', fontSize: 12 }}><input type="radio" name="act" checked={thenAction === 'block'} onChange={() => setThenAction('block')} />Block</label>
             </div>
           </div>
-          <div className="field"><label>Score adjustment</label><input className="input" defaultValue="+0.30" /></div>
+          {thenAction === 'augment' && (
+            <div className="field"><label>Score adjustment</label><input className="input" value={scoreAdj} onChange={(e) => setScoreAdj(e.target.value)} /></div>
+          )}
           <div style={{ padding: 12, border: '1px solid var(--color-divider)', background: 'var(--color-surface)' }}>
-            <span style={{ display: 'block', fontSize: 10.5, letterSpacing: '.1em', textTransform: 'uppercase', color: 'color-mix(in srgb,var(--color-text) 58%,transparent)', marginBottom: 6 }}>Backtest · last 7 days</span>
-            <span style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}><span style={{ fontFamily: 'var(--font-heading)', fontSize: 24, fontFeatureSettings: "'tnum' 1" }}>64</span><span style={{ fontSize: 12, color: 'color-mix(in srgb,var(--color-text) 65%,transparent)' }}>transactions would match · 9 known fraud · est. FPR 2.1%</span></span>
+            <span style={{ display: 'block', fontSize: 10.5, letterSpacing: '.1em', textTransform: 'uppercase', color: 'color-mix(in srgb,var(--color-text) 58%,transparent)', marginBottom: 6 }}>Condition preview</span>
+            <code style={{ display: 'block', fontFamily: 'ui-monospace,Menlo,monospace', fontSize: 11.5, color: 'color-mix(in srgb,var(--color-text) 80%,transparent)' }}>
+              IF {rows.map((r) => `${r.field} ${r.op} ${r.value}`).join(' AND ')} THEN {thenAction === 'augment' ? `score += ${scoreAdj}` : thenAction === 'block' ? 'block' : 'force review'}
+            </code>
           </div>
           <button type="button" className="btn btn-primary btn-block" style={{ padding: 11 }} disabled={deploying} onClick={deployRule}>
             {deploying ? 'Deploying…' : 'Deploy rule — takes effect immediately'}

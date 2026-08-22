@@ -8,7 +8,7 @@ import {
   scenarios as SCENARIOS, simStatusLabel,
   type RawTxn, type ScenarioKey,
 } from '../lib/mock';
-import { scoreTransaction, getThresholds, updateThresholds, getThresholdPreview, type ThresholdPreviewDTO } from '../lib/api';
+import { scoreTransaction, getThresholds, updateThresholds, getThresholdPreview, WS_BASE_URL, type ThresholdPreviewDTO } from '../lib/api';
 
 export type { ScenarioKey } from '../lib/mock';
 
@@ -48,6 +48,9 @@ export function useRiskPulse() {
   const [publishMsg, setPublishMsg] = useState<string | null>(null);
   const [publishing, setPublishing] = useState(false);
   const puppetThresholdRef = useRef(0.7);
+  const [wsConnected, setWsConnected] = useState(false);
+  const wsConnectedRef = useRef(false);
+  const seenTxnIds = useRef<Set<string>>(new Set());
 
   // ---- seed thresholds from the server once on mount, so a fresh
   // session shows whatever an admin last persisted via POST
@@ -81,9 +84,62 @@ export function useRiskPulse() {
       .finally(() => setPublishing(false));
   }, [appr, blk]);
 
-  // ---- live feed: real backend scoring, falls back to the local
-  // simulator if the backend is unreachable (CORS, not running, etc.) so
-  // the console keeps working standalone for demos ----
+  // ---- checklist 4.1: persistent WebSocket to the backend's live
+  // transaction feed. Every transaction scored by ANY connected client
+  // is broadcast here — this is what lets two analyst tabs watch the
+  // same stream instead of each polling on its own timer. Auto-reconnects
+  // with a fixed backoff if the backend restarts or drops the socket. ----
+  useEffect(() => {
+    let ws: WebSocket | null = null;
+    let closedByUs = false;
+    let reconnectTimer: number | null = null;
+
+    const connect = () => {
+      try {
+        ws = new WebSocket(`${WS_BASE_URL}/ws/transactions`);
+      } catch {
+        reconnectTimer = window.setTimeout(connect, 3000);
+        return;
+      }
+      ws.onopen = () => { wsConnectedRef.current = true; setWsConnected(true); };
+      ws.onclose = () => {
+        wsConnectedRef.current = false;
+        setWsConnected(false);
+        if (!closedByUs) reconnectTimer = window.setTimeout(connect, 3000);
+      };
+      ws.onerror = () => ws?.close();
+      ws.onmessage = (ev) => {
+        try {
+          const msg = JSON.parse(ev.data);
+          if (msg.type !== 'score' || seenTxnIds.current.has(msg.txn_id)) return;
+          seenTxnIds.current.add(msg.txn_id);
+          const time = new Date().toTimeString().slice(0, 8);
+          const flagLine = msg.reason_code && msg.reason_code !== 'none' ? String(msg.reason_code).replace(/_/g, ' ') : '—';
+          const row: RawTxn = [msg.txn_id, time, msg.sender_id, msg.receiver_id, msg.amount, msg.risk_score, msg.puppet_score, flagLine];
+          if (msg.shap_values) {
+            setShapMap((prev) => ({ ...prev, [msg.txn_id]: Object.entries(msg.shap_values) as [string, number][] }));
+          }
+          setFeed((prev) => [row, ...prev].slice(0, 14));
+        } catch {
+          // malformed frame — ignore, the feed just misses this update
+        }
+      };
+    };
+    connect();
+    return () => {
+      closedByUs = true;
+      if (reconnectTimer) window.clearTimeout(reconnectTimer);
+      ws?.close();
+    };
+  }, []);
+
+  // ---- live feed: real backend scoring generates traffic; the resulting
+  // row normally arrives back via the WS broadcast above (so it's
+  // consistent with what any other connected tab sees). If the socket is
+  // down, fall back to pushing the row from the direct HTTP response so
+  // the feed doesn't stall; if the backend itself is unreachable, fall
+  // back further to the local simulator so the console still works
+  // standalone for demos. ----
   useEffect(() => {
     if (!live) return;
     let cancelled = false;
@@ -97,19 +153,22 @@ export function useRiskPulse() {
       scoreTransaction({ amount, sender_id: from, receiver_id: to, timestamp: nowIso, channel, vpa: to })
         .then((resp) => {
           if (cancelled) return;
-          const time = new Date().toTimeString().slice(0, 8);
-          const topReason = resp.shap_reasons[0];
-          const flagLine = resp.coercion_override
-            ? 'puppet override · coercion'
-            : resp.risk_score > 0.55 && topReason
-              ? topReason.feature.replace(/_/g, ' ')
-              : '—';
-          const row: RawTxn = [resp.txn_id, time, from, to, amount, resp.risk_score, resp.puppet_score, flagLine];
           setShapMap((prev) => ({
             ...prev,
             [resp.txn_id]: Object.entries(resp.shap_values) as [string, number][],
           }));
-          setFeed((prev) => [row, ...prev].slice(0, 14));
+          if (!wsConnectedRef.current && !seenTxnIds.current.has(resp.txn_id)) {
+            seenTxnIds.current.add(resp.txn_id);
+            const time = new Date().toTimeString().slice(0, 8);
+            const topReason = resp.shap_reasons[0];
+            const flagLine = resp.coercion_override
+              ? 'puppet override · coercion'
+              : resp.risk_score > 0.55 && topReason
+                ? topReason.feature.replace(/_/g, ' ')
+                : '—';
+            const row: RawTxn = [resp.txn_id, time, from, to, amount, resp.risk_score, resp.puppet_score, flagLine];
+            setFeed((prev) => [row, ...prev].slice(0, 14));
+          }
         })
         .catch(() => {
           if (cancelled) return;
@@ -242,7 +301,7 @@ export function useRiskPulse() {
 
   const screenTitle = SCREEN_TITLE[screen];
   const screenNote = SCREEN_NOTE[screen];
-  const liveLabel = live ? 'Streaming · 41/s' : 'Stream paused';
+  const liveLabel = !live ? 'Stream paused' : wsConnected ? 'Streaming · live via WS' : 'Streaming · WS reconnecting…';
   const liveCta = live ? 'Pause' : 'Resume';
 
   const layoutOpts = useMemo(() => (['A', 'B', 'C'] as Layout[]).map((l) => ({
@@ -380,7 +439,7 @@ export function useRiskPulse() {
     feed: feedRows, pickTxn, sel, split, hist, shap,
     // dashboard
     kpis, gridLines, volLine, volArea, flagLine, miniCharts, shapBase: '0.031',
-    navItems, screenTitle, screenNote, liveLabel, liveCta,
+    navItems, screenTitle, screenNote, liveLabel, liveCta, wsConnected,
     layoutOpts, layoutNote, frameOpts,
     // graph
     ...graphDerived, graphModes, prLine, prArea,

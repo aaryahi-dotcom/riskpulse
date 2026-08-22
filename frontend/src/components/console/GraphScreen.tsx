@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Blueprint } from '../ui/Blueprint';
+import { ForceGraph } from './ForceGraph';
 import { exposed, nodeMetrics as mockNodeMetrics, RED } from '../../lib/mock';
-import { getGraphNode, type GraphNodeDTO } from '../../lib/api';
+import { getGraphNode, getSubgraph, type GraphNodeDTO, type SubgraphDTO } from '../../lib/api';
 import type { RiskPulse, GraphMode } from '../../state/useRiskPulse';
 
 function toDisplayMetrics(m: GraphNodeDTO) {
@@ -19,10 +20,12 @@ export function GraphScreen({ rp }: { rp: RiskPulse }) {
   const [query, setQuery] = useState('');
   const [node, setNode] = useState<GraphNodeDTO | null>(null);
   const [lookedUp, setLookedUp] = useState<string | null>(null);
+  const [subgraph, setSubgraph] = useState<SubgraphDTO | null>(null);
 
   const lookup = (id: string) => {
     if (!id) return;
     getGraphNode(id).then((n) => { setNode(n); setLookedUp(id); }).catch(() => { setNode(null); setLookedUp(id); });
+    getSubgraph(id, 2).then(setSubgraph).catch(() => setSubgraph(null));
   };
 
   useEffect(() => { lookup(rp.sel.to); }, [rp.sel.to]);
@@ -48,15 +51,23 @@ export function GraphScreen({ rp }: { rp: RiskPulse }) {
             </span>
           </div>
           <div style={{ position: 'relative' }}>
-            <svg viewBox="0 0 760 420" style={{ width: '100%', display: 'block' }}>
-              {rp.links.map((l, i) => <line key={i} x1={l.x1} y1={l.y1} x2={l.x2} y2={l.y2} stroke={l.c} strokeWidth={l.w} />)}
-              {rp.nodes.map((n, i) => <circle key={i} cx={n.x} cy={n.y} r={n.r} fill={n.f} stroke={n.c} strokeWidth="1.6" />)}
-            </svg>
-            {rp.nodeLabels.map((n) => (
-              <span key={n.t} style={{ position: 'absolute', left: n.l, top: n.t2, transform: 'translate(-50%,-50%)', fontFamily: 'ui-monospace,Menlo,monospace', fontSize: 10, opacity: 0.7, whiteSpace: 'nowrap' }}>{n.t}</span>
-            ))}
+            {rp.gmode === 'network' && subgraph ? (
+              <ForceGraph data={subgraph} width={760} height={420} selectedId={displayId} onSelect={lookup} />
+            ) : (
+              <>
+                <svg viewBox="0 0 760 420" style={{ width: '100%', display: 'block' }}>
+                  {rp.links.map((l, i) => <line key={i} x1={l.x1} y1={l.y1} x2={l.x2} y2={l.y2} stroke={l.c} strokeWidth={l.w} />)}
+                  {rp.nodes.map((n, i) => <circle key={i} cx={n.x} cy={n.y} r={n.r} fill={n.f} stroke={n.c} strokeWidth="1.6" />)}
+                </svg>
+                {rp.nodeLabels.map((n) => (
+                  <span key={n.t} style={{ position: 'absolute', left: n.l, top: n.t2, transform: 'translate(-50%,-50%)', fontFamily: 'ui-monospace,Menlo,monospace', fontSize: 10, opacity: 0.7, whiteSpace: 'nowrap' }}>{n.t}</span>
+                ))}
+              </>
+            )}
           </div>
-          <p style={{ margin: 0, padding: '11px 16px', borderTop: '1px solid var(--color-divider)', fontSize: 11.5, color: 'color-mix(in srgb,var(--color-text) 65%,transparent)' }}>{rp.graphNote}</p>
+          <p style={{ margin: 0, padding: '11px 16px', borderTop: '1px solid var(--color-divider)', fontSize: 11.5, color: 'color-mix(in srgb,var(--color-text) 65%,transparent)' }}>
+            {rp.gmode === 'network' && subgraph ? `Live ego-network around ${displayId} · ${subgraph.nodes.length} nodes, ${subgraph.edges.length} edges · force-directed layout from /api/v1/graph/subgraph.` : rp.graphNote}
+          </p>
         </Blueprint>
         <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr)', gap: 22 }}>
           <Blueprint style={{ padding: 16 }}>

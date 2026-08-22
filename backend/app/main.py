@@ -6,6 +6,7 @@ Swagger UI: http://localhost:8000/docs
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from contextlib import asynccontextmanager
@@ -21,8 +22,9 @@ from .features_online import OnlineFeatureAssembler
 from .graph_analysis import get_graph_service
 from .latency import SCORE_LATENCY_BUDGET_MS, LatencyTracker
 from .model_service import get_model_service
-from .routers import admin, alerts, auth, feedback, graph, health, rules, score
+from .routers import admin, alerts, auth, feedback, graph, health, rules, score, ws
 from .routers.rules import seed_default_rules
+from .routers.ws import ConnectionManager
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
@@ -100,6 +102,11 @@ async def lifespan(app: FastAPI):
     app.state.feature_assembler = assembler
     app.state.graph_service = graph_service
     app.state.latency_tracker = LatencyTracker()
+    # checklist 4.1: scoring runs in a worker thread (score_transaction is
+    # a sync def), so broadcasting to WS clients from there needs the
+    # main event loop captured here, up front.
+    app.state.ws_manager = ConnectionManager()
+    app.state.event_loop = asyncio.get_running_loop()
 
     logger.info(
         "Startup complete. model_loaded=%s model_version=%s feature_store=%s feature_store_warmed=%d "
@@ -158,3 +165,4 @@ app.include_router(rules.router)
 app.include_router(feedback.router)
 app.include_router(alerts.router)
 app.include_router(graph.router)
+app.include_router(ws.router)

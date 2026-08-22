@@ -10,6 +10,9 @@ export const API_BASE_URL: string =
   (import.meta as unknown as { env: Record<string, string | undefined> }).env.VITE_API_BASE_URL ||
   'http://localhost:8000';
 
+// checklist 4.1: same host as API_BASE_URL, ws(s):// instead of http(s)://
+export const WS_BASE_URL: string = API_BASE_URL.replace(/^http/, 'ws');
+
 // Fixed demo credential — matches the backend's default DEMO_USERNAME /
 // DEMO_PASSWORD (backend/app/config.py). There's no real user system yet;
 // this is enough to exercise genuine JWT issuance + verification end to end.
@@ -322,6 +325,29 @@ export interface GraphNodeDTO {
 
 export function getGraphNode(userId: string): Promise<GraphNodeDTO> {
   return authedJson<GraphNodeDTO>(`/api/v1/graph/node/${encodeURIComponent(userId)}`);
+}
+
+export interface SubgraphNodeDTO {
+  id: string;
+  suspicious: boolean;
+}
+
+export interface SubgraphEdgeDTO {
+  source: string;
+  target: string;
+  count: number;
+  total_amount: number;
+}
+
+export interface SubgraphDTO {
+  user_id: string;
+  depth: number;
+  nodes: SubgraphNodeDTO[];
+  edges: SubgraphEdgeDTO[];
+}
+
+export function getSubgraph(userId: string, depth = 2): Promise<SubgraphDTO> {
+  return authedJson<SubgraphDTO>(`/api/v1/graph/subgraph/${encodeURIComponent(userId)}?depth=${depth}`);
 }
 
 export function retrainModel(): Promise<{ status: string }> {

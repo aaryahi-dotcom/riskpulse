@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from datetime import datetime, timezone
@@ -200,6 +201,34 @@ def score_transaction(
             )
     except Exception:  # noqa: BLE001
         logger.exception("Graph incremental update failed; live graph may be stale for this transaction.")
+
+    # --- checklist 4.1: fan the freshly scored transaction out to every
+    # connected /ws/transactions client. score_transaction runs in a
+    # worker thread, so the broadcast coroutine is scheduled onto the
+    # main event loop rather than awaited directly; fire-and-forget,
+    # since a dashboard reconnect shouldn't block the API response. ---
+    ws_manager = getattr(app_state, "ws_manager", None)
+    loop = getattr(app_state, "event_loop", None)
+    if ws_manager is not None and loop is not None:
+        try:
+            asyncio.run_coroutine_threadsafe(
+                ws_manager.broadcast({
+                    "type": "score",
+                    "txn_id": txn_id,
+                    "sender_id": payload.sender_id,
+                    "receiver_id": payload.receiver_id,
+                    "amount": payload.amount,
+                    "timestamp": payload.timestamp.isoformat(),
+                    "risk_score": response.risk_score,
+                    "decision": response.decision,
+                    "puppet_score": response.puppet_score,
+                    "reason_code": response.reason_code,
+                    "shap_values": response.shap_values,
+                }),
+                loop,
+            )
+        except Exception:  # noqa: BLE001
+            logger.exception("WS broadcast scheduling failed; live feed clients may miss this transaction.")
 
     return response
 
