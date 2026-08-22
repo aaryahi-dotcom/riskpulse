@@ -141,16 +141,12 @@ export function Simulator({ rp }: { rp: RiskPulse }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 22 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '13px 16px', border: '1px solid var(--color-divider)', background: 'var(--color-surface)', flexWrap: 'wrap' }}>
-        <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 600, fontSize: 13, letterSpacing: '.09em', textTransform: 'uppercase' }}>Demo tool — not the product</span>
-        <span style={{ fontSize: 12.5, color: 'color-mix(in srgb,var(--color-text) 70%,transparent)' }}>Judges cannot wait for real fraud. The simulator injects scripted sequences into the same scoring API a bank would call.</span>
-        <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
-          {guidedStep && <span style={{ fontSize: 11, color: 'var(--color-accent-700)' }}>Step {guidedStep.i}/{guidedStep.total} · {guidedStep.label}</span>}
-          <button type="button" className="btn btn-secondary" style={{ fontSize: 11.5 }} disabled={running} onClick={runGuidedDemo}>
-            {guidedStep ? 'Running guided demo…' : 'Guided demo ▶'}
-          </button>
-          <button type="button" className="btn btn-ghost" style={{ fontSize: 11.5 }} disabled={running} onClick={resetDemo}>Reset</button>
-        </span>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        {guidedStep && <span style={{ fontSize: 11, color: 'var(--color-accent-700)' }}>Step {guidedStep.i}/{guidedStep.total} · {guidedStep.label}</span>}
+        <button type="button" className="btn btn-secondary" style={{ fontSize: 11.5, marginLeft: 'auto' }} disabled={running} onClick={runGuidedDemo}>
+          {guidedStep ? 'Running guided demo…' : 'Guided demo ▶'}
+        </button>
+        <button type="button" className="btn btn-ghost" style={{ fontSize: 11.5 }} disabled={running} onClick={resetDemo}>Reset</button>
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 20 }}>
         {rp.scenarios.map((s) => (
