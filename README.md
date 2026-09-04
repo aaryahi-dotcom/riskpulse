@@ -1,6 +1,6 @@
 # RiskPulse
 
-**Team Hyphen · Smart India Hackathon 2026 · Problem Statement S21**
+
 *Dynamic transaction-risk scoring for adaptive verification.*
 
 RiskPulse scores every transaction on five signal families (transaction
