@@ -4,7 +4,7 @@
 // ticks) rather than animating every frame — this is a small
 // ego-neighborhood, not a live simulation, so a static settled layout is
 // enough and keeps rendering as cheap as the rest of the console's SVG.
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { forceCenter, forceCollide, forceLink, forceManyBody, forceSimulation, type SimulationNodeDatum } from 'd3-force';
 import { RED, AMBER } from '../../lib/mock';
 import type { SubgraphDTO } from '../../lib/api';
@@ -82,13 +82,17 @@ function layout(data: SubgraphDTO, width: number, height: number, ticks = 250) {
   const nodes: LaidOutNode[] = data.nodes.map((n) => ({
     id: n.id, suspicious: n.suspicious, inCycle: cycleNodes.has(n.id), fanIn: fanIn.get(n.id) ?? 0,
   }));
-  const byId = new Map(nodes.map((n) => [n.id, n]));
 
+  // A dense ego-network (e.g. a mule hub with dozens of edges) pulls
+  // itself into an unreadable knot under the old weak-repulsion tuning
+  // below the link force can win. Charge strength scales with edge count
+  // so denser subgraphs push apart harder instead of collapsing to a point.
+  const chargeStrength = -180 - Math.min(320, edges.length * 3);
   const sim = forceSimulation(nodes)
-    .force('link', forceLink(edges as unknown as { source: string; target: string }[]).id((d) => (d as LaidOutNode).id).distance(72).strength(0.5))
-    .force('charge', forceManyBody().strength(-150))
+    .force('link', forceLink(edges as unknown as { source: string; target: string }[]).id((d) => (d as LaidOutNode).id).distance(95).strength(0.25))
+    .force('charge', forceManyBody().strength(chargeStrength))
     .force('center', forceCenter(width / 2, height / 2))
-    .force('collide', forceCollide().radius(16))
+    .force('collide', forceCollide().radius(24))
     .stop();
   for (let i = 0; i < ticks; i++) sim.tick();
 
@@ -98,9 +102,13 @@ function layout(data: SubgraphDTO, width: number, height: number, ticks = 250) {
     n.y = clamp(n.y, 24, height - 24);
   });
 
+  // forceLink().id(...) already resolved e.source/e.target from string ids
+  // into the live LaidOutNode objects themselves (with clamped x/y) during
+  // initialize() above — byId is keyed by string id, so looking it up
+  // again by the now-object source/target would always miss.
   const links: LaidOutLink[] = edges.map((e) => {
-    const s = byId.get(e.source)!;
-    const t = byId.get(e.target)!;
+    const s = e.source as unknown as LaidOutNode;
+    const t = e.target as unknown as LaidOutNode;
     return { x1: s.x!, y1: s.y!, x2: t.x!, y2: t.y!, w: Math.min(4, 1 + Math.log2(1 + e.count)), inCycle: s.inCycle && t.inCycle };
   });
 
@@ -126,6 +134,7 @@ export function ForceGraph({
   ghost?: { sourceId: string; targetId: string; forceBlock: boolean } | null;
 }) {
   const { nodes, links } = useMemo(() => layout(data, width, height), [data, width, height]);
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
 
   if (!nodes.length) {
     return (
@@ -149,12 +158,19 @@ export function ForceGraph({
 
   return (
     <svg viewBox={`0 0 ${width} ${height}`} style={{ width: '100%', display: 'block' }}>
-      {links.map((l, i) => (
+      {links.map((l, i) => {
+        // color-code by edge weight: amber (single/light) fading to red
+        // (heavily repeated) so a busy subgraph reads as heat, not noise.
+        const heat = Math.min(1, (l.w - 1) / 3);
+        const edgeColor = l.inCycle ? RED : `color-mix(in srgb, ${RED} ${Math.round(20 + heat * 55)}%, ${AMBER})`;
+        return (
         <line key={i} x1={l.x1} y1={l.y1} x2={l.x2} y2={l.y2}
-          stroke={l.inCycle ? RED : 'color-mix(in srgb, currentColor 22%, transparent)'}
-          strokeWidth={l.inCycle ? l.w + 1 : l.w}
+          stroke={edgeColor}
+          opacity={l.inCycle ? 0.9 : 0.45}
+          strokeWidth={l.inCycle ? 1.6 : 0.75}
           strokeDasharray={l.inCycle ? '4 2' : undefined} />
-      ))}
+        );
+      })}
       {nodes.map((n) => {
         const isSelected = n.id === selectedId;
         const exposure = exposureById?.get(n.id);
@@ -162,17 +178,25 @@ export function ForceGraph({
           ? `color-mix(in srgb, ${RED} ${Math.round(exposure * 100)}%, var(--color-accent))`
           : n.suspicious ? RED : isSelected ? AMBER : 'var(--color-accent)';
         const isMule = n.fanIn >= MULE_FAN_IN_THRESHOLD;
+        const isHovered = n.id === hoveredId;
+        const showLabel = isSelected || isHovered;
         return (
-          <g key={n.id} transform={`translate(${n.x},${n.y})`} style={{ cursor: onSelect ? 'pointer' : 'default' }} onClick={() => onSelect?.(n.id)}>
+          <g key={n.id} transform={`translate(${n.x},${n.y})`} style={{ cursor: onSelect ? 'pointer' : 'default' }}
+            onClick={() => onSelect?.(n.id)} onMouseEnter={() => setHoveredId(n.id)} onMouseLeave={() => setHoveredId(null)}>
+            <title>{n.id}{isMule ? ` · fan-in ${n.fanIn}` : ''}</title>
             {(n.inCycle || isMule) && (
               <circle r={isSelected ? 16 : 13} fill="none" stroke={n.inCycle ? RED : AMBER} strokeWidth={1.4} strokeDasharray="2 2" opacity={0.8} />
             )}
             <circle r={isSelected ? 11 : 8} fill={`color-mix(in srgb, ${color} 24%, transparent)`} stroke={color} strokeWidth={isSelected ? 2.4 : 1.6} />
-            <text y={-13} textAnchor="middle" style={{ fontSize: 8.5, fontFamily: 'ui-monospace,Menlo,monospace', fill: 'currentColor', opacity: 0.65 }}>
-              {n.id.length > 14 ? n.id.slice(0, 13) + '…' : n.id}
-            </text>
-            {isMule && !n.inCycle && (
-              <text y={22} textAnchor="middle" style={{ fontSize: 7.5, fontFamily: 'ui-monospace,Menlo,monospace', fill: AMBER, opacity: 0.85 }}>fan-in {n.fanIn}</text>
+            {showLabel && (
+              <>
+                <text y={-16} textAnchor="middle" style={{ fontSize: 9, fontFamily: 'ui-monospace,Menlo,monospace', fill: 'currentColor', opacity: 0.9, paintOrder: 'stroke', stroke: 'var(--color-surface)', strokeWidth: 3 }}>
+                  {n.id.length > 18 ? n.id.slice(0, 17) + '…' : n.id}
+                </text>
+                {isMule && (
+                  <text y={24} textAnchor="middle" style={{ fontSize: 7.5, fontFamily: 'ui-monospace,Menlo,monospace', fill: AMBER, opacity: 0.95, paintOrder: 'stroke', stroke: 'var(--color-surface)', strokeWidth: 3 }}>fan-in {n.fanIn}</text>
+                )}
+              </>
             )}
           </g>
         );

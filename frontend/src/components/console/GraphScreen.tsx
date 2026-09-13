@@ -128,7 +128,7 @@ export function GraphScreen({ rp }: { rp: RiskPulse }) {
           </div>
           <div style={{ position: 'relative' }}>
             {subgraph ? (
-              <ForceGraph data={subgraph} width={760} height={420} selectedId={displayId} onSelect={lookup} mode={rp.gmode === 'contagion' ? 'contagion' : 'risk'} exposureById={exposureById}
+              <ForceGraph data={subgraph} width={1040} height={575} selectedId={displayId} onSelect={lookup} mode={rp.gmode === 'contagion' ? 'contagion' : 'risk'} exposureById={exposureById}
                 ghost={simResult ? { sourceId: displayId, targetId: simReceiver.trim(), forceBlock: simResult.would_force_block } : null} />
             ) : (
               <>
