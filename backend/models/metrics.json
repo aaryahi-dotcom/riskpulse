@@ -1,0 +1,34 @@
+{
+  "model_version": "v_20260822T090050Z",
+  "trained_at": "2026-08-22T09:00:50.410981+00:00",
+  "model_type": "gradient_boosting",
+  "f1": 0.5860805860805861,
+  "precision": 0.7937164117403885,
+  "recall": 0.4645535930316961,
+  "accuracy": 0.9770379652521421,
+  "roc_auc": 0.9047944175956425,
+  "false_positive_rate": 0.004378153103750822,
+  "confusion_matrix": {
+    "tn": 113476,
+    "fp": 499,
+    "fn": 2213,
+    "tp": 1920
+  },
+  "decision_threshold": 0.5,
+  "n_test_rows": 118108,
+  "test_fraud_count": 4133,
+  "target_recall_operating_point": {
+    "target_recall": 0.8,
+    "threshold": 0.029523809523809525,
+    "f1": 0.30308563081979184,
+    "precision": 0.18677918424753867,
+    "recall": 0.8032905879506412,
+    "false_positive_rate": 0.12682605834612853,
+    "confusion_matrix": {
+      "tn": 99520,
+      "fp": 14455,
+      "fn": 813,
+      "tp": 3320
+    }
+  }
+}

@@ -21,15 +21,13 @@ dist-ssr/
 venv/
 *.egg-info/
 
-# --- ML artifacts / trained models (never committed) ---
-backend/models/*.pkl
-backend/models/*.joblib
-backend/models/metrics.json
-backend/models/*.json
-!backend/models/.gitkeep
+# --- ML artifacts / trained models ---
+# Committed (not regenerated) because retraining needs the 683MB Kaggle
+# IEEE-CIS dataset below, which isn't in the repo and isn't practical to
+# fetch in a Render build — so the live model artifacts ship as-is.
 # checklist 2.6: archived previous model generations (rollback source),
 # written by POST /api/v1/admin/retrain before it overwrites the live
-# artifacts — never committed, same as the live artifacts above.
+# artifacts — these stay gitignored, same as before.
 backend/models/archive/
 
 # --- Databases ---
