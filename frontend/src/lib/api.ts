@@ -322,10 +322,10 @@ export interface FeedbackDTO {
   overridden_decision: boolean;
 }
 
-export function submitFeedback(txnId: string, confirmedLabel: 'fraud' | 'legit', overriddenDecision = false): Promise<FeedbackDTO> {
+export function submitFeedback(txnId: string, confirmedLabel: 'fraud' | 'legit', overriddenDecision = false, analystNote?: string): Promise<FeedbackDTO> {
   return authedJson<FeedbackDTO>('/api/v1/feedback', {
     method: 'POST',
-    body: JSON.stringify({ txn_id: txnId, confirmed_label: confirmedLabel, overridden_decision: overriddenDecision }),
+    body: JSON.stringify({ txn_id: txnId, confirmed_label: confirmedLabel, overridden_decision: overriddenDecision, analyst_note: analystNote ?? null }),
   });
 }
 

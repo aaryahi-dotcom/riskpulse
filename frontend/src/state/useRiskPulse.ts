@@ -14,8 +14,6 @@ export type { ScenarioKey } from '../lib/mock';
 
 export type View = 'landing' | 'auth' | 'app';
 export type Screen = 'dashboard' | 'workbench' | 'graph' | 'alerts' | 'thresholds' | 'rules' | 'health' | 'simulator';
-export type Layout = 'A' | 'B' | 'C';
-export type Frame = 'brackets' | 'plain' | 'tab';
 export type AuthMode = 'in' | 'up';
 export type GraphMode = 'network' | 'contagion';
 
@@ -29,8 +27,10 @@ export function useRiskPulse() {
   const [view, setView] = useState<View>('landing');
   const [screen, setScreen] = useState<Screen>('dashboard');
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
-  const [layout, setLayout] = useState<Layout>('A');
-  const [frame, setFrame] = useState<Frame>('brackets');
+  // Fixed to Command Grid + Hairline — there used to be a layout/frame
+  // switcher here, but with only one real layout maintained (LayoutB/C were
+  // unused variants) a picker just added confusing, dead-end options.
+  const frame = 'plain' as const;
   const [authMode, setAuthMode] = useState<AuthMode>('in');
   const [live, setLive] = useState(true);
   const [appr, setApprRaw] = useState(0.30);
@@ -369,20 +369,6 @@ export function useRiskPulse() {
   const liveLabel = !live ? 'Stream paused' : wsConnected ? 'Streaming · live via WS' : 'Streaming · WS reconnecting…';
   const liveCta = live ? 'Pause' : 'Resume';
 
-  const layoutOpts = useMemo(() => (['A', 'B', 'C'] as Layout[]).map((l) => ({
-    key: l,
-    t: l === 'A' ? 'A · Command grid' : l === 'B' ? 'B · Split console' : 'C · Scoring sheet',
-    bg: layout === l ? 'var(--color-accent)' : 'transparent',
-    fg: layout === l ? 'var(--color-bg)' : 'inherit',
-  })), [layout]);
-  const layoutNote = { A: 'Feed centre, explanation rail right — the balanced default.', B: 'Explanation-first: score and SHAP pinned left, stream as cards.', C: 'One audit sheet: dense tabular log with inline figures.' }[layout];
-
-  const frameOpts = useMemo(() => ([['brackets', '1 · Brackets'], ['plain', '2 · Hairline'], ['tab', '3 · Index tab']] as [Frame, string][]).map(([key, t]) => ({
-    key, t,
-    bg: frame === key ? 'var(--color-accent)' : 'transparent',
-    fg: frame === key ? 'var(--color-bg)' : 'inherit',
-  })), [frame]);
-
   // ---- graph screen derived ----
   const graphDerived = useMemo(() => {
     const adj: number[][] = GN.map(() => []);
@@ -494,9 +480,9 @@ export function useRiskPulse() {
 
   return {
     // core state
-    view, screen, theme, layout, frame, authMode, live, appr, blk, gmode, scenario, today,
+    view, screen, theme, frame, authMode, live, appr, blk, gmode, scenario, today,
     // setters / handlers
-    setView, setScreen, toggleTheme, setLayout, setFrame, setAuthMode, swapAuth, toggleLive,
+    setView, setScreen, toggleTheme, setAuthMode, swapAuth, toggleLive,
     setAppr, setBlk, setPreset, setGmode, runScenario,
     goLanding, goApp, goAuthIn, goAuthUp, goSim,
     themeGlyph: theme === 'dark' ? '☀' : '☾',
@@ -512,7 +498,6 @@ export function useRiskPulse() {
     // dashboard
     kpis, gridLines, volLine, volArea, flagLine, miniCharts, shapBase: '0.031',
     navItems, screenTitle, screenNote, liveLabel, liveCta, wsConnected,
-    layoutOpts, layoutNote, frameOpts,
     // graph
     ...graphDerived, graphModes, prLine, prArea,
     // thresholds

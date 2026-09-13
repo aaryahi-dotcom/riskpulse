@@ -67,10 +67,13 @@ import pandas as pd
 from sklearn.ensemble import GradientBoostingClassifier, IsolationForest
 from sklearn.isotonic import IsotonicRegression
 from sklearn.metrics import (
+    accuracy_score,
     confusion_matrix,
     f1_score,
+    precision_recall_curve,
     precision_score,
     recall_score,
+    roc_auc_score,
 )
 from sklearn.model_selection import train_test_split
 
@@ -101,8 +104,16 @@ W_SUPERVISED = 0.85
 W_ANOMALY = 0.15
 
 RANDOM_STATE = 42
-SMOTE_SAMPLING_STRATEGY = 0.20  # minority raised to 20% of majority in train_core only
+SMOTE_SAMPLING_STRATEGY = 0.35  # minority raised to 35% of majority in train_core only — industry-typical
+# moderate oversampling for fraud (full 1:1 balance tends to overfit on
+# synthetic minority points; 0.3-0.5 is the commonly cited safe band)
 DECISION_THRESHOLD_FOR_METRICS = 0.5
+# Recall floor the fraud team wants to guarantee is caught, regardless of
+# what precision/FPR that costs at this threshold — surfaced alongside the
+# 0.5 report below, not silently swapped in as the "official" number, since
+# the two answer different questions (model quality vs. an operating-point
+# choice).
+TARGET_RECALL = 0.80
 
 
 def try_import_xgboost():
@@ -248,16 +259,19 @@ def train_and_evaluate(data_dir: str) -> TrainResult:
     else:
         model_type = "gradient_boosting"
         clf = GradientBoostingClassifier(
-            n_estimators=120, max_depth=4, learning_rate=0.1,
+            n_estimators=200, max_depth=5, learning_rate=0.1,
             subsample=0.6, random_state=RANDOM_STATE, verbose=1,
         )
         logger.info(
             "Training sklearn GradientBoostingClassifier (XGBoost fallback). "
-            "n_estimators=120 max_depth=4 subsample=0.6 — tuned down from a "
-            "larger grid to fit a hackathon compute/time budget on this "
-            "8GB, 8-core dev machine; SMOTE (not scale_pos_weight, which "
+            "n_estimators=200 max_depth=5 subsample=0.6 — more capacity than "
+            "the original hackathon-budget config so the extra SMOTE'd "
+            "minority signal (sampling_strategy=%.2f) actually gets learned; "
+            "subsample=0.6 stays as the regularizer against overfitting that "
+            "capacity. SMOTE (not scale_pos_weight, which "
             "GradientBoostingClassifier doesn't expose) is the imbalance "
-            "handling mechanism for this fallback path."
+            "handling mechanism for this fallback path.",
+            SMOTE_SAMPLING_STRATEGY,
         )
         clf.fit(X_core_res, y_core_res)
     logger.info("Supervised model trained: %s", model_type)
@@ -324,6 +338,11 @@ def train_and_evaluate(data_dir: str) -> TrainResult:
     f1 = f1_score(y_test, y_pred)
     precision = precision_score(y_test, y_pred, zero_division=0)
     recall = recall_score(y_test, y_pred)
+    accuracy = accuracy_score(y_test, y_pred)
+    # AUC-ROC is threshold-independent (ranks calibrated_test directly,
+    # not y_pred), unlike the other four metrics above which all depend on
+    # DECISION_THRESHOLD_FOR_METRICS.
+    roc_auc = roc_auc_score(y_test, calibrated_test)
     cm = confusion_matrix(y_test, y_pred)
     tn, fp, fn, tp = cm.ravel()
     fpr = fp / (fp + tn) if (fp + tn) > 0 else 0.0
@@ -332,6 +351,8 @@ def train_and_evaluate(data_dir: str) -> TrainResult:
     logger.info("F1        = %.4f", f1)
     logger.info("Precision = %.4f", precision)
     logger.info("Recall    = %.4f", recall)
+    logger.info("Accuracy  = %.4f", accuracy)
+    logger.info("AUC-ROC   = %.4f", roc_auc)
     logger.info("FPR       = %.4f", fpr)
     logger.info("Confusion matrix [[TN FP][FN TP]] = [[%d %d][%d %d]]", tn, fp, fn, tp)
     print("\n=== RiskPulse — held-out test set metrics ===")
@@ -339,8 +360,53 @@ def train_and_evaluate(data_dir: str) -> TrainResult:
     print(f"F1         : {f1:.4f}")
     print(f"Precision  : {precision:.4f}")
     print(f"Recall     : {recall:.4f}")
+    print(f"Accuracy   : {accuracy:.4f}")
+    print(f"AUC-ROC    : {roc_auc:.4f}")
     print(f"FPR        : {fpr:.4f}")
     print(f"Confusion matrix: TN={tn} FP={fp} FN={fn} TP={tp}\n")
+
+    # ---------------------------------------------------------------
+    # 9b. Target-recall operating point — the lowest decision threshold
+    # (i.e. highest precision) that still guarantees recall >= TARGET_RECALL
+    # on the held-out test set. This is a genuinely different question from
+    # "how good is the model" (roc_auc, answered above): it's "where do we
+    # draw the line so we catch at least 80% of fraud, and what does that
+    # cost in precision/FPR". precision_recall_curve's recall is
+    # monotonically non-increasing in its threshold array, so the highest
+    # threshold whose recall still clears the bar is the best (highest-
+    # precision) point that satisfies it.
+    # ---------------------------------------------------------------
+    prc_precision, prc_recall, prc_thresholds = precision_recall_curve(y_test, calibrated_test)
+    eligible = [i for i in range(len(prc_thresholds)) if prc_recall[i] >= TARGET_RECALL]
+    if eligible:
+        best_i = max(eligible, key=lambda i: prc_thresholds[i])
+        target_threshold = float(prc_thresholds[best_i])
+    else:
+        # Unreachable in practice (recall -> 1.0 as threshold -> 0), but
+        # fall back to "flag everyone" rather than crash if it ever happens.
+        target_threshold = 0.0
+    y_pred_target = (calibrated_test >= target_threshold).astype(int)
+    f1_target = f1_score(y_test, y_pred_target)
+    precision_target = precision_score(y_test, y_pred_target, zero_division=0)
+    recall_target = recall_score(y_test, y_pred_target)
+    cm_target = confusion_matrix(y_test, y_pred_target)
+    tn_t, fp_t, fn_t, tp_t = cm_target.ravel()
+    fpr_target = fp_t / (fp_t + tn_t) if (fp_t + tn_t) > 0 else 0.0
+
+    logger.info("=== TARGET-RECALL OPERATING POINT (recall >= %.2f) ===", TARGET_RECALL)
+    logger.info("Threshold = %.4f", target_threshold)
+    logger.info("F1        = %.4f", f1_target)
+    logger.info("Precision = %.4f", precision_target)
+    logger.info("Recall    = %.4f", recall_target)
+    logger.info("FPR       = %.4f", fpr_target)
+    logger.info("Confusion matrix [[TN FP][FN TP]] = [[%d %d][%d %d]]", tn_t, fp_t, fn_t, tp_t)
+    print(f"=== Target-recall operating point (recall >= {TARGET_RECALL:.2f}) ===")
+    print(f"Threshold  : {target_threshold:.4f}")
+    print(f"F1         : {f1_target:.4f}")
+    print(f"Precision  : {precision_target:.4f}")
+    print(f"Recall     : {recall_target:.4f}")
+    print(f"FPR        : {fpr_target:.4f}")
+    print(f"Confusion matrix: TN={tn_t} FP={fp_t} FN={fn_t} TP={tp_t}\n")
 
     # ---------------------------------------------------------------
     # Bundle everything into a TrainResult (no disk writes yet — see
@@ -369,11 +435,22 @@ def train_and_evaluate(data_dir: str) -> TrainResult:
             "f1": float(f1),
             "precision": float(precision),
             "recall": float(recall),
+            "accuracy": float(accuracy),
+            "roc_auc": float(roc_auc),
             "false_positive_rate": float(fpr),
             "confusion_matrix": {"tn": int(tn), "fp": int(fp), "fn": int(fn), "tp": int(tp)},
             "decision_threshold": DECISION_THRESHOLD_FOR_METRICS,
             "n_test_rows": int(len(X_test)),
             "test_fraud_count": int(y_test.sum()),
+            "target_recall_operating_point": {
+                "target_recall": TARGET_RECALL,
+                "threshold": target_threshold,
+                "f1": float(f1_target),
+                "precision": float(precision_target),
+                "recall": float(recall_target),
+                "false_positive_rate": float(fpr_target),
+                "confusion_matrix": {"tn": int(tn_t), "fp": int(fp_t), "fn": int(fn_t), "tp": int(tp_t)},
+            },
         },
         n_rows=int(n_rows),
         n_train_rows=int(len(X_core_res)),

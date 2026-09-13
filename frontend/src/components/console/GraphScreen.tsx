@@ -209,7 +209,7 @@ export function GraphScreen({ rp }: { rp: RiskPulse }) {
               <span style={{ fontFamily: 'var(--font-heading)', fontSize: 15, fontFeatureSettings: "'tnum' 1", color: m.c }}>{m.v}</span>
             </div>
           ))}
-          <button type="button" className="btn btn-primary btn-block" style={{ marginTop: 14 }}>Open case →</button>
+          <button type="button" className="btn btn-primary btn-block" style={{ marginTop: 14 }} onClick={() => rp.setScreen('workbench')}>Open case →</button>
         </Blueprint>
         <Blueprint style={{ padding: 16 }}>
           <span style={{ display: 'block', fontSize: 10.5, letterSpacing: '.1em', textTransform: 'uppercase', color: 'color-mix(in srgb,var(--color-text) 58%,transparent)', marginBottom: 10 }}>Pre-approval sim · new edge from {displayId}</span>

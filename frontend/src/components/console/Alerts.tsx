@@ -2,8 +2,9 @@ import { useEffect, useState } from 'react';
 import { Blueprint } from '../ui/Blueprint';
 import { alertKpis as mockKpis, alertGroups as mockGroups, scatter, AMBER, GREEN, RED, money, tint } from '../../lib/mock';
 import { getAlertsGrouped, type AlertCaseDTO } from '../../lib/api';
+import type { RiskPulse } from '../../state/useRiskPulse';
 
-type DisplayGroup = typeof mockGroups[number];
+type DisplayGroup = typeof mockGroups[number] & { txnId?: string };
 
 const groupTitle = (c: AlertCaseDTO) =>
   c.group_type === 'proactive_exposure' ? `Likely next victim · ${c.group_key}`
@@ -20,6 +21,7 @@ function toDisplayGroup(c: AlertCaseDTO): DisplayGroup {
   const [pr, color] = priorityTier(c);
   return {
     t: groupTitle(c), pr, c: color, tint: tint(color), rule: groupRule(c),
+    txnId: c.member_txn_ids[0],
     cells: [
       { k: 'Transactions', v: String(c.txn_count) },
       { k: 'Value at risk', v: money(c.total_amount_at_risk) },
@@ -30,7 +32,7 @@ function toDisplayGroup(c: AlertCaseDTO): DisplayGroup {
   };
 }
 
-export function Alerts() {
+export function Alerts({ rp }: { rp: RiskPulse }) {
   const [live, setLive] = useState<{ kpis: typeof mockKpis; groups: DisplayGroup[] } | null>(null);
 
   useEffect(() => {
@@ -51,7 +53,7 @@ export function Alerts() {
   }, []);
 
   const alertKpis = live?.kpis ?? mockKpis;
-  const alertGroups = live && live.groups.length ? live.groups : mockGroups;
+  const alertGroups: DisplayGroup[] = live && live.groups.length ? live.groups : mockGroups;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 22 }}>
@@ -84,7 +86,17 @@ export function Alerts() {
                   <span style={{ display: 'flex', alignItems: 'flex-end', gap: 2, height: 34 }}>
                     {g.bars.map((b, i) => <span key={i} style={{ flex: 1, height: b.h, background: g.c, opacity: 0.75 }} />)}
                   </span>
-                  <button type="button" className="btn btn-secondary" style={{ fontSize: 11.5, padding: '5px 10px' }}>Open case</button>
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    style={{ fontSize: 11.5, padding: '5px 10px' }}
+                    onClick={() => {
+                      if (g.txnId) rp.pickTxn(g.txnId);
+                      rp.setScreen('workbench');
+                    }}
+                  >
+                    Open case
+                  </button>
                 </div>
               </div>
             </Blueprint>

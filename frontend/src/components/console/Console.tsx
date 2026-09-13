@@ -20,7 +20,7 @@ export function Console({ rp }: { rp: RiskPulse }) {
           {rp.screen === 'dashboard' && <Dashboard rp={rp} />}
           {rp.screen === 'workbench' && <Workbench rp={rp} />}
           {rp.screen === 'graph' && <GraphScreen rp={rp} />}
-          {rp.screen === 'alerts' && <Alerts />}
+          {rp.screen === 'alerts' && <Alerts rp={rp} />}
           {rp.screen === 'thresholds' && <Thresholds rp={rp} />}
           {rp.screen === 'rules' && <Rules />}
           {rp.screen === 'health' && <Health rp={rp} />}

@@ -9,6 +9,13 @@ import type { RiskPulse } from '../../state/useRiskPulse';
 
 type TimelineEvent = { t: string; d: string; c: string };
 
+const REASON_LABELS: Record<string, string> = {
+  known_customer: 'Reason — known customer',
+  expected_purchase: 'Expected purchase',
+  verified_by_phone: 'Verified by phone',
+  merchant_whitelisted: 'Merchant whitelisted',
+};
+
 function toAnalystStats(s: FeedbackStatsDTO) {
   return [
     { k: 'Reviewed', v: String(s.total_reviewed), w: '100%', c: 'var(--color-accent)' },
@@ -61,11 +68,13 @@ export function Workbench({ rp }: { rp: RiskPulse }) {
   const displayLinked = liveLinked && liveLinked.length > 0 ? toLinkedRows(liveLinked) : linked;
   const displayTimeline = liveTimeline && liveTimeline.length > 0 ? liveTimeline : timeline;
 
+  const [reason, setReason] = useState('known_customer');
+
   const sendFeedback = async (label: 'fraud' | 'legit') => {
     setSubmitting(true);
     setFeedbackMsg(null);
     try {
-      await submitFeedback(rp.sel.id, label, label === 'legit' && rp.sel.dec !== 'Approve');
+      await submitFeedback(rp.sel.id, label, label === 'legit' && rp.sel.dec !== 'Approve', REASON_LABELS[reason]);
       setFeedbackMsg(
         label === 'fraud'
           ? `Confirmed fraud on ${rp.sel.id} — contagion propagation queued.`
@@ -153,11 +162,8 @@ export function Workbench({ rp }: { rp: RiskPulse }) {
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', padding: '14px 18px', borderTop: '1px solid var(--color-divider)' }}>
             <button type="button" className="btn" disabled={submitting} onClick={() => sendFeedback('fraud')} style={{ background: RED, color: 'var(--color-bg)', borderColor: RED, padding: '10px 18px' }}>Confirm fraud</button>
             <button type="button" className="btn btn-secondary" disabled={submitting} onClick={() => sendFeedback('legit')} style={{ padding: '10px 18px' }}>Override — approve</button>
-            <select className="input" style={{ width: 220 }}>
-              <option>Reason — known customer</option>
-              <option>Expected purchase</option>
-              <option>Verified by phone</option>
-              <option>Merchant whitelisted</option>
+            <select className="input" style={{ width: 220 }} value={reason} onChange={(e) => setReason(e.target.value)}>
+              {Object.entries(REASON_LABELS).map(([k, label]) => <option key={k} value={k}>{label}</option>)}
             </select>
             <span style={{ marginLeft: 'auto', fontSize: 11.5, color: feedbackMsg ? (feedbackMsg.startsWith('Backend') ? RED : GREEN) : 'color-mix(in srgb,var(--color-text) 62%,transparent)' }}>
               {feedbackMsg ?? 'Confirming fraud triggers contagion propagation (depth 3).'}
