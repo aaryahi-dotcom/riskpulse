@@ -11,7 +11,7 @@ services:
       - key: JWT_SECRET
         generateValue: true
       - key: CORS_ORIGINS
-        value: '["https://riskpulse-frontend.onrender.com"]'
+        value: '["https://riskpulse-frontend-nuz4.onrender.com"]'
 
   - type: web
     name: riskpulse-frontend
@@ -20,7 +20,7 @@ services:
     staticPublishPath: frontend/dist
     envVars:
       - key: VITE_API_BASE_URL
-        value: https://riskpulse-backend.onrender.com
+        value: https://riskpulse-backend-nuz4.onrender.com
     routes:
       - type: rewrite
         source: /*
