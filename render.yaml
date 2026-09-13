@@ -16,7 +16,6 @@ services:
   - type: web
     name: riskpulse-frontend
     runtime: static
-    plan: free
     buildCommand: cd frontend && npm install && npm run build
     staticPublishPath: frontend/dist
     envVars:
