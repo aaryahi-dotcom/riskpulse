@@ -286,6 +286,8 @@ def score_transaction(
                     "reason_code": response.reason_code,
                     "shap_values": response.shap_values,
                     "shap_reasons": [r.model_dump() for r in response.shap_reasons],
+                    "agent_trace": response.agent_trace.model_dump() if response.agent_trace else None,
+                    "agent_decision": response.agent_decision.model_dump() if response.agent_decision else None,
                 }),
                 loop,
             )
