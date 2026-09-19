@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Blueprint } from '../ui/Blueprint';
+import { ScenarioPicker } from './ScenarioPicker';
 import { simLog as mockLog, simSeries, simStats as mockStats, line, area, RED, AMBER, GREEN } from '../../lib/mock';
 import { scoreTransaction, type ScorePayload } from '../../lib/api';
 import type { RiskPulse, ScenarioKey } from '../../state/useRiskPulse';
@@ -141,6 +142,7 @@ export function Simulator({ rp }: { rp: RiskPulse }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 22 }}>
+      <ScenarioPicker onScenarioRun={resetDemo} />
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
         {guidedStep && <span style={{ fontSize: 11, color: 'var(--color-accent-700)' }}>Step {guidedStep.i}/{guidedStep.total} · {guidedStep.label}</span>}
         <button type="button" className="btn btn-secondary" style={{ fontSize: 11.5, marginLeft: 'auto' }} disabled={running} onClick={runGuidedDemo}>
