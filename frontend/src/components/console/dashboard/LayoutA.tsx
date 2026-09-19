@@ -1,6 +1,6 @@
 import { Blueprint } from '../../ui/Blueprint';
 import { BrainPanel } from '../BrainPanel';
-import { QuickScenarioLauncher } from '../QuickScenarioLauncher';
+import { DemoMode } from '../DemoMode';
 import type { RiskPulse } from '../../../state/useRiskPulse';
 
 export function LayoutA({ rp }: { rp: RiskPulse }) {
@@ -50,7 +50,7 @@ export function LayoutA({ rp }: { rp: RiskPulse }) {
           </div>
         </Blueprint>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 22 }}>
-          <QuickScenarioLauncher />
+          <DemoMode />
           <Blueprint style={{ padding: 18, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
             <span style={{ alignSelf: 'flex-start', fontSize: 11, letterSpacing: '.1em', textTransform: 'uppercase', color: 'color-mix(in srgb,var(--color-text) 58%,transparent)' }}>Selected · {rp.sel.id}</span>
             <div style={{ position: 'relative', width: '100%', maxWidth: 200, marginTop: 6 }}>
