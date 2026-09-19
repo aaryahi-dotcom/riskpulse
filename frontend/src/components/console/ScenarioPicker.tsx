@@ -12,19 +12,19 @@ type Scenario = {
 const SCENARIOS: Scenario[] = [
   {
     key: 'digital_arrest',
-    label: '🚨 Digital Arrest Victim',
+    label: 'Digital Arrest Victim',
     description: 'Fake police officer on call, pressuring transfer. Multiple red flags.',
     expectedOutcome: 'Should → BLOCK (coercion detected)',
   },
   {
     key: 'large_new_payee',
-    label: '✅ Genuine Large Payment',
+    label: 'Genuine Large Payment',
     description: 'Large amount to new payee, no call, normal hours. Legitimate.',
     expectedOutcome: 'Should → COOL_OFF (brief friction, then ALLOW)',
   },
   {
     key: 'fake_kyc_remote',
-    label: '⚠️ Fake KYC + Remote Access',
+    label: 'Fake KYC + Remote Access',
     description: 'AnyDesk open, urgent SMS about account verification. Sophisticated fraud.',
     expectedOutcome: 'Should → BLOCK (remote access + urgency)',
   },
