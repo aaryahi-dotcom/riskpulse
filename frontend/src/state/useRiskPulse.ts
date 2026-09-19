@@ -139,6 +139,9 @@ export function useRiskPulse() {
           if (msg.shap_reasons) {
             setShapReasonsMap((prev) => ({ ...prev, [msg.txn_id]: msg.shap_reasons as ShapReasonDTO[] }));
           }
+          if (msg.agent_trace) {
+            setAgentTraceMap((prev) => ({ ...prev, [msg.txn_id]: msg.agent_trace }));
+          }
           setFeed((prev) => [row, ...prev].slice(0, 14));
           if (msg.decision === 'block') {
             pushToast(msg.txn_id, `${msg.txn_id} blocked · risk ${Number(msg.risk_score).toFixed(2)} · ${msg.sender_id} → ${msg.receiver_id}`, RED);
