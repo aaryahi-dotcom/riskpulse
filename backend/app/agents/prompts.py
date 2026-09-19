@@ -100,16 +100,16 @@ def mock_decision_agent_response(
     explanation_en = "Transaction appears safe."
     explanation_hi = "लेन-देन सुरक्षित दिखता है।"
 
-    # Start with base score heuristic
-    if augmented_score < 0.4:
+    # Start with base score heuristic — calibrated for demo visibility
+    if augmented_score < 0.25:
         verdict = "ALLOW"
         factors.append({"name": "Low risk score", "weight": 0.25, "direction": "positive"})
-    elif augmented_score < 0.6:
+    elif augmented_score < 0.32:
         verdict = "COOL_OFF"
         factors.append({"name": "Moderate risk score", "weight": 0.20, "direction": "negative"})
     else:
         verdict = "BLOCK"
-        factors.append({"name": "High risk score", "weight": 0.30, "direction": "negative"})
+        factors.append({"name": "Elevated risk score", "weight": 0.30, "direction": "negative"})
         confidence = 0.9
 
     # Puppet coercion signal

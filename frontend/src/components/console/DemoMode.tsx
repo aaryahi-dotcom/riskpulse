@@ -4,69 +4,69 @@ import { scoreTransaction } from '../../lib/api';
 
 const DEMO_SCENARIOS = [
   {
-    name: 'Digital Arrest - Transfer 1',
+    name: 'Safe Transfer (APPROVE)',
     payload: {
-      amount: 50000,
-      sender_id: `demo-victim-${Date.now()}@okhdfc`,
-      receiver_id: 'demo-mule-1@ybl',
+      amount: 5000,
+      sender_id: `demo-safe-${Date.now()}@okhdfc`,
+      receiver_id: 'demo-trusted@ybl',
       timestamp: new Date().toISOString(),
+      channel: 'UPI',
+      vpa: 'demo-trusted@ybl',
+    },
+  },
+  {
+    name: 'Moderate Risk - Unverified (COOL_OFF)',
+    payload: {
+      amount: 75000,
+      sender_id: `demo-moderate-${Date.now()}@okhdfc`,
+      receiver_id: 'demo-new-payee@ybl',
+      timestamp: new Date(Date.now() + 60000).toISOString(),
+      channel: 'UPI',
+      vpa: 'demo-new-payee@ybl',
+    },
+  },
+  {
+    name: 'High Risk - Rapid Suspicious Pattern (BLOCK)',
+    payload: {
+      amount: 500000,
+      sender_id: `demo-suspicious-${Date.now()}@okhdfc`,
+      receiver_id: 'demo-mule-1@ybl',
+      timestamp: new Date(Date.now() + 120000).toISOString(),
       channel: 'UPI',
       vpa: 'demo-mule-1@ybl',
     },
   },
   {
-    name: 'Digital Arrest - Transfer 2',
-    payload: {
-      amount: 75000,
-      sender_id: `demo-victim-${Date.now()}@okhdfc`,
-      receiver_id: 'demo-mule-2@ybl',
-      timestamp: new Date(Date.now() + 120000).toISOString(),
-      channel: 'UPI',
-      vpa: 'demo-mule-2@ybl',
-    },
-  },
-  {
-    name: 'Digital Arrest - Transfer 3',
-    payload: {
-      amount: 100000,
-      sender_id: `demo-victim-${Date.now()}@okhdfc`,
-      receiver_id: 'demo-mule-3@ybl',
-      timestamp: new Date(Date.now() + 240000).toISOString(),
-      channel: 'UPI',
-      vpa: 'demo-mule-3@ybl',
-    },
-  },
-  {
-    name: 'Genuine Large Payment',
-    payload: {
-      amount: 150000,
-      sender_id: `demo-legit-user-${Date.now()}@oksbi`,
-      receiver_id: 'demo-payee-legit@paytm',
-      timestamp: new Date(Date.now() + 3600000).toISOString(),
-      channel: 'UPI',
-      vpa: 'demo-payee-legit@paytm',
-    },
-  },
-  {
-    name: 'Fake KYC - Transfer 1',
+    name: 'Another Safe Payment (APPROVE)',
     payload: {
       amount: 25000,
-      sender_id: `demo-kyc-victim-${Date.now()}@apl`,
-      receiver_id: 'demo-kyc-fraud@ybl',
-      timestamp: new Date().toISOString(),
+      sender_id: `demo-legit-${Date.now()}@oksbi`,
+      receiver_id: 'demo-vendor@paytm',
+      timestamp: new Date(Date.now() + 180000).toISOString(),
       channel: 'UPI',
-      vpa: 'demo-kyc-fraud@ybl',
+      vpa: 'demo-vendor@paytm',
     },
   },
   {
-    name: 'Fake KYC - Transfer 2',
+    name: 'Borderline Risk - First-time Large (COOL_OFF)',
     payload: {
-      amount: 50000,
-      sender_id: `demo-kyc-victim-${Date.now()}@apl`,
-      receiver_id: 'demo-kyc-fraud@ybl',
-      timestamp: new Date(Date.now() + 60000).toISOString(),
+      amount: 150000,
+      sender_id: `demo-newuser-${Date.now()}@apl`,
+      receiver_id: 'demo-unknown@ybl',
+      timestamp: new Date(Date.now() + 240000).toISOString(),
       channel: 'UPI',
-      vpa: 'demo-kyc-fraud@ybl',
+      vpa: 'demo-unknown@ybl',
+    },
+  },
+  {
+    name: 'Critical Risk - Multiple Red Flags (BLOCK)',
+    payload: {
+      amount: 750000,
+      sender_id: `demo-victim-coercion-${Date.now()}@okhdfc`,
+      receiver_id: 'demo-offshore@ybl',
+      timestamp: new Date(Date.now() + 300000).toISOString(),
+      channel: 'UPI',
+      vpa: 'demo-offshore@ybl',
     },
   },
 ];
@@ -106,69 +106,33 @@ export function DemoMode() {
       addLog('✓ Demo initialized', 'success');
       await new Promise((r) => setTimeout(r, 300));
 
-      // Demo header
-      addLog('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━', 'pending');
-      addLog('Scenario 1: Digital Arrest Scam', 'warning');
-      addLog('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━', 'pending');
-      await new Promise((r) => setTimeout(r, 400));
-
-      // Run digital arrest scenarios
-      for (let i = 0; i < 3; i++) {
+      // Inject all 6 scenarios in sequence
+      for (let i = 0; i < DEMO_SCENARIOS.length; i++) {
         const scenario = DEMO_SCENARIOS[i];
         try {
-          addLog(`Injecting ${scenario.name}...`, 'pending');
+          addLog(`${i + 1}. ${scenario.name}...`, 'pending');
           const resp = await scoreTransaction(scenario.payload);
-          const msg = `Score: ${resp.risk_score.toFixed(2)} | Decision: ${resp.decision.toUpperCase()} | Puppet: ${resp.puppet_score.toFixed(2)}`;
-          addLog(msg, resp.decision === 'block' ? 'error' : resp.decision === 'step_up' ? 'warning' : 'success');
+
+          // Determine status color based on decision
+          let statusColor: LogEntry['status'] = 'success';
+          if (resp.decision === 'block') statusColor = 'error';
+          else if (resp.decision === 'step_up') statusColor = 'warning';
+
+          const verdict = resp.agent_decision?.verdict || 'N/A';
+          const msg = `Score: ${resp.risk_score.toFixed(2)} → Agent Verdict: ${verdict}`;
+          addLog(msg, statusColor);
+
           setProgress((i + 1) / DEMO_SCENARIOS.length);
-          await new Promise((r) => setTimeout(r, 600));
-        } catch (e) {
-          addLog(`Error on ${scenario.name}`, 'error');
-        }
-      }
-
-      // Genuine payment
-      addLog('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━', 'pending');
-      addLog('Scenario 2: Legitimate Large Payment', 'pending');
-      addLog('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━', 'pending');
-      await new Promise((r) => setTimeout(r, 400));
-
-      const legitimateScenario = DEMO_SCENARIOS[3];
-      try {
-        addLog(`Injecting ${legitimateScenario.name}...`, 'pending');
-        const resp = await scoreTransaction(legitimateScenario.payload);
-        const msg = `Score: ${resp.risk_score.toFixed(2)} | Decision: ${resp.decision.toUpperCase()} | Puppet: ${resp.puppet_score.toFixed(2)}`;
-        addLog(msg, resp.decision === 'block' ? 'error' : resp.decision === 'step_up' ? 'warning' : 'success');
-        setProgress(0.67);
-        await new Promise((r) => setTimeout(r, 600));
-      } catch (e) {
-        addLog(`Error on ${legitimateScenario.name}`, 'error');
-      }
-
-      // Fake KYC
-      addLog('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━', 'pending');
-      addLog('Scenario 3: Fake KYC + Remote Access', 'warning');
-      addLog('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━', 'pending');
-      await new Promise((r) => setTimeout(r, 400));
-
-      for (let i = 4; i < 6; i++) {
-        const scenario = DEMO_SCENARIOS[i];
-        try {
-          addLog(`Injecting ${scenario.name}...`, 'pending');
-          const resp = await scoreTransaction(scenario.payload);
-          const msg = `Score: ${resp.risk_score.toFixed(2)} | Decision: ${resp.decision.toUpperCase()} | Puppet: ${resp.puppet_score.toFixed(2)}`;
-          addLog(msg, resp.decision === 'block' ? 'error' : resp.decision === 'step_up' ? 'warning' : 'success');
-          setProgress(0.67 + ((i - 3) / 3) * 0.33);
-          await new Promise((r) => setTimeout(r, 600));
+          await new Promise((r) => setTimeout(r, 700));
         } catch (e) {
           addLog(`Error on ${scenario.name}`, 'error');
         }
       }
 
       addLog('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━', 'success');
-      addLog('✓ Demo complete! Check the live feed and brain panel →', 'success');
-      addLog('Notice how the agent pipeline detects coercion in the arrest scenario', 'success');
-      addLog('and approves the legitimate large payment.', 'success');
+      addLog('✓ Demo complete! All 6 transactions scored', 'success');
+      addLog('See mix of APPROVE (green), COOL_OFF (yellow), BLOCK (red)', 'success');
+      addLog('Click any transaction in live feed to see agent reasoning', 'success');
       setProgress(1);
       setDemoComplete(true);
     } catch (e) {
