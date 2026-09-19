@@ -114,6 +114,13 @@ class ScoreResponse(BaseModel):
         "state (first question + session_id for follow-up answers).",
     )
 
+    # --- Stage 3: Agent trace (right-hand brain panel) ---
+    agent_trace: AgentTrace | None = Field(
+        default=None,
+        description="Live trace of agent pipeline execution for visualization. "
+        "Shows which agents ran, their status, reasoning lines, and final verdict.",
+    )
+
 
 class ThresholdUpdateRequest(BaseModel):
     approve_threshold: float = Field(..., ge=0, le=1)
@@ -324,3 +331,19 @@ class FrictionAnswerResponse(BaseModel):
     coercion_likelihood: float = Field(ge=0, le=1)
     key_answers: list[str]
     reasoning: str
+
+
+# ============================================================================
+# Stage 3 — Agent Trace (for right-hand brain panel)
+# ============================================================================
+class AgentTraceEntry(BaseModel):
+    agent: str  # "decision_agent", "friction_agent", "signal_agent", etc.
+    status: Literal["pending", "running", "success", "failed"]
+    reasoning: str = ""  # one-line summary of output
+
+
+class AgentTrace(BaseModel):
+    base_score: float
+    grey_zone_active: bool
+    agents_run: list[AgentTraceEntry]
+    final_verdict: AgentDecision | None = None

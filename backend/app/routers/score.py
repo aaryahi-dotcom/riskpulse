@@ -19,7 +19,7 @@ from ..decision import (
 )
 from ..idempotency import request_hash
 from ..models_db import Rule, ScoredTransaction, ThresholdConfig
-from ..schemas import AgentDecision, ScoreRequest, ScoreResponse, ScoredTransactionOut
+from ..schemas import AgentDecision, AgentTrace, AgentTraceEntry, ScoreRequest, ScoreResponse, ScoredTransactionOut
 from ..security import get_current_subject
 
 logger = logging.getLogger(__name__)
@@ -139,11 +139,21 @@ def score_transaction(
         puppet_threshold=thresholds.puppet_threshold,
         exposure_score=exposure_score,
     )
-    # --- Stage 1: Grey-zone agent decision ---
+    # --- Stage 1: Grey-zone agent decision + Stage 3: trace ---
     agent_decision: AgentDecision | None = None
+    agent_trace_entries: list[AgentTraceEntry] = []
+    grey_zone_active = (thresholds.grey_zone_lower <= agg.augmented_score < thresholds.grey_zone_upper)
+
     try:
-        if (thresholds.grey_zone_lower <= agg.augmented_score < thresholds.grey_zone_upper):
+        if grey_zone_active:
             logger.info(f"Score {agg.augmented_score:.2f} in grey zone [{thresholds.grey_zone_lower}, {thresholds.grey_zone_upper}); calling Decision Agent")
+
+            agent_trace_entries.append(AgentTraceEntry(
+                agent="decision_agent",
+                status="running",
+                reasoning="Analyzing transaction in grey zone...",
+            ))
+
             transaction_history = {
                 "sender_tx_count": debug["raw_values"].get("sender_tx_count_so_far", 0) if X is not None else 0,
                 "days_since_first_seen": debug["raw_values"].get("sender_days_since_first_seen", 0) if X is not None else 0,
@@ -163,13 +173,30 @@ def score_transaction(
             )
             agent_decision = AgentDecision(**agent_response)
             logger.info(f"Agent decision: {agent_decision.verdict}")
+
+            # Update trace entry with success
+            agent_trace_entries[-1].status = "success"
+            agent_trace_entries[-1].reasoning = f"Verdict: {agent_decision.verdict}. {agent_decision.reasoning}"
     except Exception as e:  # noqa: BLE001
         logger.exception("Decision Agent call failed; degrading to standard thresholding")
         agent_decision = None
+        if agent_trace_entries and agent_trace_entries[-1].status == "running":
+            agent_trace_entries[-1].status = "failed"
+            agent_trace_entries[-1].reasoning = f"Error: {str(e)[:80]}"
 
     tier = agg.tier
     reason_code = agg.reason_code
     action = build_action_payload(tier, reasons)
+
+    # Build agent trace for Stage 3 visualization
+    agent_trace = None
+    if grey_zone_active:
+        agent_trace = AgentTrace(
+            base_score=round(agg.augmented_score, 4),
+            grey_zone_active=True,
+            agents_run=agent_trace_entries,
+            final_verdict=agent_decision,
+        )
 
     txn_id = "TXN-" + h[:12].upper()
     response = ScoreResponse(
@@ -189,6 +216,7 @@ def score_transaction(
         ml_score=round(agg.ml_score, 4),
         rule_hits=agg.rule_hits,
         agent_decision=agent_decision,
+        agent_trace=agent_trace,
     )
 
     # --- persist (immutable audit row) ---

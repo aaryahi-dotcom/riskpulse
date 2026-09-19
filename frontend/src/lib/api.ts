@@ -40,6 +40,28 @@ export interface ShapReasonDTO {
   reason: string;
 }
 
+export interface AgentTraceEntry {
+  agent: string;
+  status: 'pending' | 'running' | 'success' | 'failed';
+  reasoning: string;
+}
+
+export interface AgentDecision {
+  verdict: 'ALLOW' | 'COOL_OFF' | 'ALERT_TRUSTED_CONTACT' | 'BLOCK';
+  explanation_en: string;
+  explanation_hi: string;
+  factors: Array<{ name: string; weight: number; direction: 'positive' | 'negative' }>;
+  confidence: number;
+  reasoning: string;
+}
+
+export interface AgentTrace {
+  base_score: number;
+  grey_zone_active: boolean;
+  agents_run: AgentTraceEntry[];
+  final_verdict: AgentDecision | null;
+}
+
 export interface ScoreResponseDTO {
   txn_id: string;
   risk_score: number;
@@ -54,6 +76,11 @@ export interface ScoreResponseDTO {
   coercion_reason: string | null;
   action: Record<string, unknown>;
   idempotent_replay: boolean;
+  ml_score?: number;
+  rule_hits?: Array<Record<string, unknown>>;
+  agent_decision?: AgentDecision | null;
+  agent_trace?: AgentTrace | null;
+  friction?: Record<string, unknown> | null;
 }
 
 function withTimeout(ms: number): { signal: AbortSignal; cancel: () => void } {

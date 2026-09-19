@@ -49,6 +49,7 @@ export function useRiskPulse() {
   // same real/mock-fallback split, just carrying the human-readable text
   // instead of raw feature names.
   const [shapReasonsMap, setShapReasonsMap] = useState<Record<string, ShapReasonDTO[]>>({});
+  const [agentTraceMap, setAgentTraceMap] = useState<Record<string, any>>({});
   const [liveReplay, setLiveReplay] = useState<ThresholdPreviewDTO | null>(null);
   const [publishMsg, setPublishMsg] = useState<string | null>(null);
   const [publishing, setPublishing] = useState(false);
@@ -180,6 +181,9 @@ export function useRiskPulse() {
             [resp.txn_id]: Object.entries(resp.shap_values) as [string, number][],
           }));
           setShapReasonsMap((prev) => ({ ...prev, [resp.txn_id]: resp.shap_reasons }));
+          if (resp.agent_trace) {
+            setAgentTraceMap((prev) => ({ ...prev, [resp.txn_id]: resp.agent_trace }));
+          }
           if (!wsConnectedRef.current && !seenTxnIds.current.has(resp.txn_id)) {
             seenTxnIds.current.add(resp.txn_id);
             const time = new Date().toTimeString().slice(0, 8);
@@ -266,14 +270,16 @@ export function useRiskPulse() {
   const sel = useMemo(() => {
     const r = selectedRow?.raw ?? RAW_SEED[0];
     const [selDec, selColor] = decide(r[5], appr, blk);
+    const txnId = r[0];
     return {
-      id: r[0], score: r[5].toFixed(2), dec: selDec, color: selColor, tint: tint(selColor),
+      id: txnId, score: r[5].toFixed(2), dec: selDec, color: selColor, tint: tint(selColor),
       band: r[5] >= blk ? 'above block threshold' : r[5] >= appr ? 'in step-up band' : 'below approve threshold',
       dash: `${(r[5] * 194.8).toFixed(1)} 400`, ringDash: `${(r[5] * 301.6).toFixed(1)} 400`,
       amt: money(r[4]), to: r[3], from: r[2], channel: r[8], puppet: r[6].toFixed(2),
       flags: r[7] === '—' ? ['no graph flags'] : r[7].split(' · '),
+      agentTrace: agentTraceMap[txnId] ?? null,
     };
-  }, [selectedRow, appr, blk]);
+  }, [selectedRow, appr, blk, agentTraceMap]);
 
   const [copyMsg, setCopyMsg] = useState<string | null>(null);
   const copySelJson = useCallback(() => {

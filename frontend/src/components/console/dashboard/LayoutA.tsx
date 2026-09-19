@@ -1,4 +1,5 @@
 import { Blueprint } from '../../ui/Blueprint';
+import { BrainPanel } from '../BrainPanel';
 import type { RiskPulse } from '../../../state/useRiskPulse';
 
 export function LayoutA({ rp }: { rp: RiskPulse }) {
@@ -76,7 +77,7 @@ export function LayoutA({ rp }: { rp: RiskPulse }) {
           </Blueprint>
         </div>
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,7fr) minmax(0,5fr)', gap: 22 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr) minmax(300px, 300px)', gap: 22 }}>
         <Blueprint style={{ padding: 18 }}>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, marginBottom: 14 }}>
             <span style={{ fontSize: 11, letterSpacing: '.1em', textTransform: 'uppercase', color: 'color-mix(in srgb,var(--color-text) 58%,transparent)' }}>Volume &amp; flagged rate · 24h</span>
@@ -114,6 +115,7 @@ export function LayoutA({ rp }: { rp: RiskPulse }) {
             ))}
           </ul>
         </Blueprint>
+        <BrainPanel trace={rp.sel.agentTrace} language="en" />
       </div>
     </div>
   );
