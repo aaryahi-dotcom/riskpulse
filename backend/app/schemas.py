@@ -54,6 +54,21 @@ class AnalystAlert(BaseModel):
     priority: Literal["P1", "P2", "P3"] = "P2"
 
 
+class DecisionFactor(BaseModel):
+    name: str
+    weight: float
+    direction: Literal["positive", "negative"]
+
+
+class AgentDecision(BaseModel):
+    verdict: Literal["ALLOW", "COOL_OFF", "ALERT_TRUSTED_CONTACT", "BLOCK"]
+    explanation_en: str
+    explanation_hi: str
+    factors: list[DecisionFactor]
+    confidence: float = Field(..., ge=0, le=1)
+    reasoning: str
+
+
 class ScoreResponse(BaseModel):
     txn_id: str
     risk_score: float
@@ -85,17 +100,28 @@ class ScoreResponse(BaseModel):
         "score_delta, forced_tier} each.",
     )
 
+    # --- Stage 1: Grey-zone agent decision ---
+    agent_decision: AgentDecision | None = Field(
+        default=None,
+        description="If augmented_score falls in grey zone, agent pipeline produces "
+        "an explainable verdict with factors. Otherwise None (fast path).",
+    )
+
 
 class ThresholdUpdateRequest(BaseModel):
     approve_threshold: float = Field(..., ge=0, le=1)
     block_threshold: float = Field(..., ge=0, le=1)
     puppet_threshold: float = Field(..., ge=0, le=1)
+    grey_zone_lower: float = Field(default=0.35, ge=0, le=1)
+    grey_zone_upper: float = Field(default=0.75, ge=0, le=1)
 
 
 class ThresholdResponse(BaseModel):
     approve_threshold: float
     block_threshold: float
     puppet_threshold: float
+    grey_zone_lower: float
+    grey_zone_upper: float
     updated_at: datetime
     updated_by: str
 

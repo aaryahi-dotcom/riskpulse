@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import desc, or_
 from sqlalchemy.orm import Session
 
+from ..agents.client import call_decision_agent
 from ..db import get_db
 from ..decision import (
     aggregate_decision,
@@ -18,7 +19,7 @@ from ..decision import (
 )
 from ..idempotency import request_hash
 from ..models_db import Rule, ScoredTransaction, ThresholdConfig
-from ..schemas import ScoreRequest, ScoreResponse, ScoredTransactionOut
+from ..schemas import AgentDecision, ScoreRequest, ScoreResponse, ScoredTransactionOut
 from ..security import get_current_subject
 
 logger = logging.getLogger(__name__)
@@ -138,6 +139,34 @@ def score_transaction(
         puppet_threshold=thresholds.puppet_threshold,
         exposure_score=exposure_score,
     )
+    # --- Stage 1: Grey-zone agent decision ---
+    agent_decision: AgentDecision | None = None
+    try:
+        if (thresholds.grey_zone_lower <= agg.augmented_score < thresholds.grey_zone_upper):
+            logger.info(f"Score {agg.augmented_score:.2f} in grey zone [{thresholds.grey_zone_lower}, {thresholds.grey_zone_upper}); calling Decision Agent")
+            transaction_history = {
+                "sender_tx_count": debug["raw_values"].get("sender_tx_count_so_far", 0) if X is not None else 0,
+                "days_since_first_seen": debug["raw_values"].get("sender_days_since_first_seen", 0) if X is not None else 0,
+                "first_time_beneficiary": bool(debug["raw_values"].get("first_time_beneficiary_flag", 1.0) if X is not None else True),
+            }
+            agent_response = call_decision_agent(
+                ml_score=agg.ml_score,
+                augmented_score=agg.augmented_score,
+                puppet_score=puppet_score,
+                amount=payload.amount,
+                channel=payload.channel,
+                sender_id=payload.sender_id,
+                receiver_id=payload.receiver_id,
+                transaction_history=transaction_history,
+                signals=None,  # TODO: populate with Signal Agent output (Stage 5)
+                scam_type=None,  # TODO: populate with Scam-Pattern Agent output (Stage 6)
+            )
+            agent_decision = AgentDecision(**agent_response)
+            logger.info(f"Agent decision: {agent_decision.verdict}")
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Decision Agent call failed; degrading to standard thresholding")
+        agent_decision = None
+
     tier = agg.tier
     reason_code = agg.reason_code
     action = build_action_payload(tier, reasons)
@@ -159,6 +188,7 @@ def score_transaction(
         idempotent_replay=False,
         ml_score=round(agg.ml_score, 4),
         rule_hits=agg.rule_hits,
+        agent_decision=agent_decision,
     )
 
     # --- persist (immutable audit row) ---

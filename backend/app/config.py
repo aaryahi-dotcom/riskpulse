@@ -39,6 +39,12 @@ class Settings(BaseSettings):
     default_approve_threshold: float = 0.30
     default_block_threshold: float = 0.70
     default_puppet_threshold: float = 0.70
+    default_grey_zone_lower: float = 0.35
+    default_grey_zone_upper: float = 0.75
+
+    # --- Agent layer (Stage 1+) ---
+    anthropic_api_key: str | None = None
+    mock_llm: bool = False  # if True, agents return canned responses (offline demo mode)
 
     # --- CORS ---
     cors_origins: list[str] = ["http://localhost:5173", "http://127.0.0.1:5173"]

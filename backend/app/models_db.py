@@ -75,6 +75,8 @@ class ThresholdConfig(Base):
     approve_threshold: Mapped[float] = mapped_column(Float, default=0.30)
     block_threshold: Mapped[float] = mapped_column(Float, default=0.70)
     puppet_threshold: Mapped[float] = mapped_column(Float, default=0.70)
+    grey_zone_lower: Mapped[float] = mapped_column(Float, default=0.35)
+    grey_zone_upper: Mapped[float] = mapped_column(Float, default=0.75)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     updated_by: Mapped[str] = mapped_column(String, default="system")
 
@@ -89,9 +91,13 @@ class ThresholdAudit(Base):
     old_approve_threshold: Mapped[float] = mapped_column(Float)
     old_block_threshold: Mapped[float] = mapped_column(Float)
     old_puppet_threshold: Mapped[float] = mapped_column(Float)
+    old_grey_zone_lower: Mapped[float] = mapped_column(Float, default=0.35)
+    old_grey_zone_upper: Mapped[float] = mapped_column(Float, default=0.75)
     new_approve_threshold: Mapped[float] = mapped_column(Float)
     new_block_threshold: Mapped[float] = mapped_column(Float)
     new_puppet_threshold: Mapped[float] = mapped_column(Float)
+    new_grey_zone_lower: Mapped[float] = mapped_column(Float, default=0.35)
+    new_grey_zone_upper: Mapped[float] = mapped_column(Float, default=0.75)
 
 
 class Rule(Base):
