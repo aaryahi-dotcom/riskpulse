@@ -36,6 +36,8 @@ def _get_or_create_thresholds(db: Session) -> ThresholdConfig:
             approve_threshold=s.default_approve_threshold,
             block_threshold=s.default_block_threshold,
             puppet_threshold=s.default_puppet_threshold,
+            grey_zone_lower=s.default_grey_zone_lower,
+            grey_zone_upper=s.default_grey_zone_upper,
             updated_by="system_default",
         )
         db.add(cfg)

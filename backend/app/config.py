@@ -39,8 +39,8 @@ class Settings(BaseSettings):
     default_approve_threshold: float = 0.30
     default_block_threshold: float = 0.70
     default_puppet_threshold: float = 0.70
-    default_grey_zone_lower: float = 0.35
-    default_grey_zone_upper: float = 0.75
+    default_grey_zone_lower: float = 0.20
+    default_grey_zone_upper: float = 0.70
 
     # --- Agent layer (Stage 1+) ---
     anthropic_api_key: str | None = None
