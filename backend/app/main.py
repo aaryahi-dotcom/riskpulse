@@ -22,7 +22,7 @@ from .features_online import OnlineFeatureAssembler
 from .graph_analysis import get_graph_service
 from .latency import SCORE_LATENCY_BUDGET_MS, LatencyTracker
 from .model_service import get_model_service
-from .routers import admin, alerts, auth, feedback, graph, health, rules, score, ws
+from .routers import admin, alerts, auth, feedback, friction, graph, health, rules, score, ws
 from .routers.rules import seed_default_rules
 from .routers.ws import ConnectionManager
 
@@ -160,6 +160,7 @@ async def latency_logging_middleware(request: Request, call_next):
 app.include_router(health.router)
 app.include_router(auth.router)
 app.include_router(score.router)
+app.include_router(friction.router)
 app.include_router(admin.router)
 app.include_router(rules.router)
 app.include_router(feedback.router)

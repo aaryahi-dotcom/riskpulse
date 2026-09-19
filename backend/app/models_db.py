@@ -158,3 +158,27 @@ class ModelMetricRecord(Base):
     promoted: Mapped[bool] = mapped_column(Boolean, default=False)
     trained_at: Mapped[str] = mapped_column(String)
     recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, index=True)
+
+
+class FrictionSession(Base):
+    """Stage 2 — Friction Agent conversation state. Tracks multi-turn
+    coercion-detection conversation with user. One session per transaction
+    in the grey zone. Stores full conversation history, current question,
+    and final coercion_likelihood."""
+
+    __tablename__ = "friction_sessions"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    txn_id: Mapped[str] = mapped_column(String, index=True)
+    sender_id: Mapped[str] = mapped_column(String, index=True)
+    status: Mapped[str] = mapped_column(String, default="not_started")  # not_started | in_progress | completed
+    turn_count: Mapped[int] = mapped_column(Integer, default=0)
+    max_turns: Mapped[int] = mapped_column(Integer, default=4)
+    conversation_json: Mapped[dict] = mapped_column(JSON, default={})  # [{turn, question, options, answer}, ...]
+    current_question: Mapped[str] = mapped_column(String, nullable=True)
+    current_options: Mapped[list] = mapped_column(JSON, default=[])
+    coercion_likelihood: Mapped[float] = mapped_column(Float, default=0.0)
+    key_answers: Mapped[list] = mapped_column(JSON, default=[])  # answers that suggested coercion
+    reasoning: Mapped[str] = mapped_column(String, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)

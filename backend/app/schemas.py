@@ -107,6 +107,13 @@ class ScoreResponse(BaseModel):
         "an explainable verdict with factors. Otherwise None (fast path).",
     )
 
+    # --- Stage 2: Friction Agent conversation ---
+    friction: FrictionResponse | None = Field(
+        default=None,
+        description="If grey zone + agent decision initiated, friction conversation "
+        "state (first question + session_id for follow-up answers).",
+    )
+
 
 class ThresholdUpdateRequest(BaseModel):
     approve_threshold: float = Field(..., ge=0, le=1)
@@ -277,3 +284,43 @@ class RetrainRequest(BaseModel):
 
 class RollbackRequest(BaseModel):
     models_dir: str | None = None
+
+
+# ============================================================================
+# Stage 2 — Friction Agent (multi-turn conversation)
+# ============================================================================
+class FrictionTurn(BaseModel):
+    turn: int
+    question: str
+    options: list[str] | None = None
+    answer: str | None = None
+
+
+class FrictionResponse(BaseModel):
+    session_id: str
+    status: Literal["not_started", "in_progress", "completed"]
+    turn_count: int
+    max_turns: int
+    current_question: str | None = None
+    current_options: list[str] | None = None
+    conversation_history: list[FrictionTurn] = Field(default_factory=list)
+    coercion_likelihood: float = Field(default=0.0, ge=0, le=1)
+    key_answers: list[str] = Field(default_factory=list)
+    reasoning: str = ""
+
+
+class FrictionAnswerRequest(BaseModel):
+    answer: str = Field(..., description="User's answer to the current question.")
+    language: str = Field(default="en", description="en or hi")
+
+
+class FrictionAnswerResponse(BaseModel):
+    session_id: str
+    status: Literal["not_started", "in_progress", "completed"]
+    turn_count: int
+    max_turns: int
+    current_question: str | None = None
+    current_options: list[str] | None = None
+    coercion_likelihood: float = Field(ge=0, le=1)
+    key_answers: list[str]
+    reasoning: str
