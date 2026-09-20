@@ -234,7 +234,7 @@ export function GraphScreen({ rp }: { rp: RiskPulse }) {
           <button type="button" className="btn btn-primary btn-block" style={{ marginTop: 14 }} onClick={() => rp.setScreen('workbench')}>Open case →</button>
         </Blueprint>
         <Blueprint style={{ padding: 16 }}>
-          <span style={{ display: 'block', fontSize: 10.5, letterSpacing: '.1em', textTransform: 'uppercase', color: 'color-mix(in srgb,var(--color-text) 58%,transparent)', marginBottom: 10 }}>Pre-approval sim · new edge from {displayId}</span>
+          <span style={{ display: 'block', fontSize: 10.5, letterSpacing: '.1em', textTransform: 'uppercase', color: 'color-mix(in srgb,var(--color-text) 58%,transparent)', marginBottom: 10 }}>Pre-approval sim · new edge from {displayId} <span style={{ fontWeight: 500, color: AMBER }}>— simulated</span></span>
           <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
             <input className="input" placeholder="proposed receiver / VPA" value={simReceiver} onChange={(e) => { setSimReceiver(e.target.value); setSimResult(null); }} style={{ fontSize: 11.5, flex: 1 }} />
           </div>

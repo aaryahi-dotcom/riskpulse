@@ -173,6 +173,7 @@ export const NAV_DEFS: [string, string, string][] = [
   ['workbench', 'Workbench', '18'],
   ['graph', 'Graph', ''],
   ['alerts', 'Alerts', '30'],
+  ['victim', 'Victim Flow', '🎬'],
   ['thresholds', 'Thresholds', ''],
   ['rules', 'Rules', ''],
   ['health', 'Model health', ''],
@@ -181,12 +182,12 @@ export const NAV_DEFS: [string, string, string][] = [
 
 export const SCREEN_TITLE: Record<string, string> = {
   dashboard: 'Dashboard', workbench: 'Analyst workbench', graph: 'Transaction graph',
-  alerts: 'Alert queue', thresholds: 'Threshold control', rules: 'Rule engine',
+  alerts: 'Alert queue', victim: 'Victim experience', thresholds: 'Threshold control', rules: 'Rule engine',
   health: 'Model health', simulator: 'Scenario simulator',
 };
 export const SCREEN_NOTE: Record<string, string> = {
   dashboard: 'live', workbench: '18 in queue', graph: '2-hop · contagion',
-  alerts: '30 grouped cases', thresholds: 'admin', rules: '4 active',
+  alerts: '30 grouped cases', victim: 'interactive demo', thresholds: 'admin', rules: '4 active',
   health: 'xgb_v4', simulator: 'demo tool',
 };
 

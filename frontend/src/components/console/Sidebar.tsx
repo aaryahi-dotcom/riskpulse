@@ -32,7 +32,7 @@ export function Sidebar({ rp }: { rp: RiskPulse }) {
           <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#5f9d84', animation: 'rp-pulse 2s infinite' }} />Engine online
         </div>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginTop: 10 }}>
-          <span style={{ fontSize: 12, color: 'color-mix(in srgb,var(--color-text) 70%,transparent)' }}>xgb_v4 · p95 78ms</span>
+          <span style={{ fontSize: 12, color: 'color-mix(in srgb,var(--color-text) 70%,transparent)' }}>Rule-based Scorer v1.0 · p95 78ms</span>
           <button type="button" className="btn btn-secondary" onClick={rp.toggleTheme} style={{ width: 30, height: 30, padding: 0, fontSize: 12 }}>{rp.themeGlyph}</button>
         </div>
       </div>

@@ -99,7 +99,7 @@ export function LayoutA({ rp }: { rp: RiskPulse }) {
           </div>
         </Blueprint>
         <Blueprint style={{ padding: 18 }}>
-          <span style={{ display: 'block', fontSize: 11, letterSpacing: '.1em', textTransform: 'uppercase', color: 'color-mix(in srgb,var(--color-text) 58%,transparent)', marginBottom: 6 }}>SHAP contribution · {rp.sel.id}</span>
+          <span style={{ display: 'block', fontSize: 11, letterSpacing: '.1em', textTransform: 'uppercase', color: 'color-mix(in srgb,var(--color-text) 58%,transparent)', marginBottom: 6 }}>Risk factors · {rp.sel.id}</span>
           {rp.shap.map((s) => (
             <div key={s.n} style={{ display: 'grid', gridTemplateColumns: 'minmax(0,150px) 1fr 44px', alignItems: 'center', gap: 10, padding: '5px 0' }}>
               <span style={{ fontSize: 11.5, fontFamily: 'ui-monospace,Menlo,monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.n}</span>

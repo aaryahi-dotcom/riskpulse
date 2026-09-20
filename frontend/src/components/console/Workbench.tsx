@@ -129,7 +129,7 @@ export function Workbench({ rp }: { rp: RiskPulse }) {
               <span style={{ fontSize: 11, fontFamily: 'ui-monospace,Menlo,monospace', color: 'color-mix(in srgb,var(--color-text) 62%,transparent)' }}>→ {rp.sel.to}</span>
             </div>
             <div style={{ padding: 18, borderLeft: '1px solid var(--color-divider)' }}>
-              <span style={{ display: 'block', fontSize: 10.5, letterSpacing: '.1em', textTransform: 'uppercase', color: 'color-mix(in srgb,var(--color-text) 58%,transparent)', marginBottom: 8 }}>SHAP waterfall</span>
+              <span style={{ display: 'block', fontSize: 10.5, letterSpacing: '.1em', textTransform: 'uppercase', color: 'color-mix(in srgb,var(--color-text) 58%,transparent)', marginBottom: 8 }}>Risk factors</span>
               {rp.shap.map((s) => (
                 <div key={s.n} style={{ display: 'grid', gridTemplateColumns: 'minmax(0,148px) 1fr 44px', alignItems: 'center', gap: 10, padding: '4px 0' }}>
                   <span style={{ fontSize: 11, fontFamily: 'ui-monospace,Menlo,monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.n}</span>
@@ -161,7 +161,7 @@ export function Workbench({ rp }: { rp: RiskPulse }) {
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', padding: '14px 18px', borderTop: '1px solid var(--color-divider)' }}>
             <button type="button" className="btn" disabled={submitting} onClick={() => sendFeedback('fraud')} style={{ background: RED, color: 'var(--color-bg)', borderColor: RED, padding: '10px 18px' }}>Confirm fraud</button>
-            <button type="button" className="btn btn-secondary" disabled={submitting} onClick={() => sendFeedback('legit')} style={{ padding: '10px 18px' }}>Override — approve</button>
+            {!rp.sel.id.startsWith('demo-') && <button type="button" className="btn btn-secondary" disabled={submitting} onClick={() => sendFeedback('legit')} style={{ padding: '10px 18px' }}>Override — approve</button>}
             <select className="input" style={{ width: 220 }} value={reason} onChange={(e) => setReason(e.target.value)}>
               {Object.entries(REASON_LABELS).map(([k, label]) => <option key={k} value={k}>{label}</option>)}
             </select>
