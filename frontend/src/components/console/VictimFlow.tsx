@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import type { RiskPulse } from '../../state/useRiskPulse';
 
 type Stage = 'payment' | 'checking' | 'friction' | 'hold' | 'safe' | 'ended';
 type Language = 'en' | 'hi';
@@ -33,7 +34,7 @@ const CAPTIONS_HI = {
   safe: 'पीड़ित की रक्षा की जाती है और सूचित किया जाता है। पैसा घोटालेबाज़ तक नहीं पहुंचा।',
 };
 
-export function VictimFlow() {
+export function VictimFlow({ rp }: { rp?: RiskPulse } = {}) {
   const [stage, setStage] = useState<Stage>('payment');
   const [lang, setLang] = useState<Language>('en');
   const [qIndex, setQIndex] = useState(0);
@@ -190,6 +191,26 @@ export function VictimFlow() {
   const hasContradiction = answers['call'] === 'No' && (stage === 'hold' || stage === 'ended' || stage === 'safe');
   const riskScore = stage === 'payment' ? 0.15 : stage === 'checking' ? 0.62 : stage === 'friction' ? 0.84 : 0.97;
 
+  const handleConfirmFraud = () => {
+    if (!rp) return;
+    const time = new Date().toTimeString().slice(0, 5);
+    const heldTxn = [
+      'demo-held-001',
+      time,
+      '+91 9876543210',
+      'safe.custody09@ybl',
+      200000,
+      0.97,
+      0,
+      'COACHED_RESPONSE',
+      'UPI',
+    ] as any;
+    rp.setFeed?.((prev: any) => [heldTxn, ...prev].slice(0, 14));
+    rp.pickTxn?.('demo-held-001');
+    rp.setGmode?.('contagion');
+    rp.setScreen?.('graph');
+  };
+
   if (presentation) {
     return (
       <div style={{ display: 'grid', gridTemplateColumns: '22% 36% 42%', gap: 32, padding: 32, background: '#111', height: '100vh', overflow: 'hidden', fontFamily: 'var(--font-body)' }}>
@@ -239,7 +260,7 @@ export function VictimFlow() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12, alignItems: 'center' }}>
           <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.08em', textTransform: 'uppercase', color: '#888', width: '100%', textAlign: 'center' }}>Victim's Phone</div>
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
-            <PhoneScreen stage={stage} qIndex={qIndex} questions={questions} answers={answers} setAnswers={setAnswers} onNext={advanceWithAutoAnswer} callTime={callTime} lang={lang} />
+            <PhoneScreen stage={stage} qIndex={qIndex} questions={questions} answers={answers} setAnswers={setAnswers} onNext={advanceWithAutoAnswer} callTime={callTime} lang={lang} onConfirmFraud={handleConfirmFraud} />
           </div>
         </div>
 
@@ -277,7 +298,7 @@ export function VictimFlow() {
   );
 }
 
-function PhoneScreen({ stage, qIndex, questions, answers, setAnswers, onNext, callTime, mirror, zoom = 1, lang }: any) {
+function PhoneScreen({ stage, qIndex, questions, answers, setAnswers, onNext, callTime, mirror, zoom = 1, lang, onConfirmFraud }: any) {
   const baseTime = 12 * 60 + 47;
   const callDurationTime = baseTime + callTime;
 
@@ -422,7 +443,12 @@ function PhoneScreen({ stage, qIndex, questions, answers, setAnswers, onNext, ca
                   {lang === 'en' ? 'Your family has been informed.' : 'आपके परिवार को सूचित किया गया है।'}
                 </div>
               </div>
-              {!mirror && <TapButton label={lang === 'en' ? 'Call 1930' : '1930 पर कॉल करें'} onClick={() => {}} style={{ background: '#06b6d4' }} />}
+              {!mirror && (
+                <div style={{ display: 'flex', gap: 8, flexDirection: 'column' }}>
+                  <TapButton label={lang === 'en' ? 'Confirm fraud' : 'धोखाधड़ी की पुष्टि करें'} onClick={onConfirmFraud} style={{ background: '#ef4444' }} />
+                  <TapButton label={lang === 'en' ? 'Call 1930' : '1930 पर कॉल करें'} onClick={() => {}} style={{ background: '#06b6d4' }} />
+                </div>
+              )}
             </>
           )}
         </div>

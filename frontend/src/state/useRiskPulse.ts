@@ -13,7 +13,7 @@ import { scoreTransaction, getThresholds, updateThresholds, getThresholdPreview,
 export type { ScenarioKey } from '../lib/mock';
 
 export type View = 'landing' | 'auth' | 'app';
-export type Screen = 'dashboard' | 'workbench' | 'graph' | 'alerts' | 'thresholds' | 'rules' | 'health' | 'simulator';
+export type Screen = 'dashboard' | 'workbench' | 'graph' | 'alerts' | 'victim' | 'thresholds' | 'rules' | 'health' | 'simulator';
 export type AuthMode = 'in' | 'up';
 export type GraphMode = 'network' | 'contagion';
 
@@ -496,7 +496,7 @@ export function useRiskPulse() {
     goLanding, goApp, goAuthIn, goAuthUp, goSim,
     themeGlyph: theme === 'dark' ? '☀' : '☾',
     // feed / selection
-    feed: feedRows, pickTxn, sel, split, hist, shap, shapReasons,
+    feed: feedRows, setFeed, pickTxn, sel, split, hist, shap, shapReasons,
     // feed filters (4.3)
     filterChannel, setFilterChannel, filterDecision, setFilterDecision, filterMinScore, setFilterMinScore,
     availableChannels, feedTotal: allFeedRows.length,
