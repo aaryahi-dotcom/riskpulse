@@ -192,9 +192,12 @@ export function VictimFlow({ rp }: { rp?: RiskPulse } = {}) {
   const riskScore = stage === 'payment' ? 0.15 : stage === 'checking' ? 0.62 : stage === 'friction' ? 0.84 : 0.97;
 
   const handleConfirmFraud = () => {
-    if (!rp) return;
+    if (!rp) {
+      console.error('VictimFlow: rp not provided, cannot navigate');
+      return;
+    }
     const time = new Date().toTimeString().slice(0, 5);
-    const heldTxn = [
+    const heldTxn: any = [
       'demo-held-001',
       time,
       '+91 9876543210',
@@ -204,11 +207,16 @@ export function VictimFlow({ rp }: { rp?: RiskPulse } = {}) {
       0,
       'COACHED_RESPONSE',
       'UPI',
-    ] as any;
-    rp.setFeed?.((prev: any) => [heldTxn, ...prev].slice(0, 14));
-    rp.pickTxn?.('demo-held-001');
-    rp.setGmode?.('contagion');
-    rp.setScreen?.('graph');
+    ];
+    if (rp.setFeed) rp.setFeed((prev: any) => [heldTxn, ...prev].slice(0, 14));
+    if (rp.pickTxn) rp.pickTxn('demo-held-001');
+    if (rp.setGmode) rp.setGmode('contagion');
+    if (rp.setScreen) {
+      console.log('Navigating to graph');
+      rp.setScreen('graph');
+    } else {
+      console.error('VictimFlow: setScreen not available');
+    }
   };
 
   if (presentation) {
@@ -220,7 +228,7 @@ export function VictimFlow({ rp }: { rp?: RiskPulse } = {}) {
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.08em', textTransform: 'uppercase', color: '#888' }}>Victim's Phone</div>
-          <PhoneScreen stage={stage} qIndex={qIndex} questions={questions} answers={answers} setAnswers={setAnswers} onNext={advanceWithAutoAnswer} callTime={callTime} lang={lang} />
+          <PhoneScreen stage={stage} qIndex={qIndex} questions={questions} answers={answers} setAnswers={setAnswers} onNext={advanceWithAutoAnswer} callTime={callTime} lang={lang} onConfirmFraud={handleConfirmFraud} />
         </div>
         <div>
           <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.08em', textTransform: 'uppercase', color: '#888', marginBottom: 12 }}>RiskPulse Brain</div>
